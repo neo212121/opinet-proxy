@@ -470,7 +470,6 @@
         setTimeout(() => { document.body.removeChild(a); window.URL.revokeObjectURL(url); }, 100);
     }
     
-    // --- 카카오톡 및 이메일 공유 기능 ---
     function shareViaKakao() {
         if (!window.Kakao) {
             alert("카카오 SDK를 불러오지 못했습니다.");
@@ -584,7 +583,6 @@
         window.location.href = `mailto:${emails.join(',')}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
         closeEmailModal();
     }
-
 </script>
 </body>
 </html>

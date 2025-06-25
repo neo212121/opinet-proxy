@@ -1,0 +1,574 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>차량 운행 일지</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+    <!-- PDF 생성을 위한 라이브러리 (이미지 기반) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; background-color: #f0f2f5; }
+        .a4-container {
+             width: 100%;
+             max-width: 210mm; /* 데스크탑에서는 A4 너비 유지 */
+             min-height: 297mm; 
+             padding: 1rem; /* 모바일용 패딩 */
+             margin: 20px auto; 
+             background: white; 
+             box-shadow: 0 0 10px rgba(0,0,0,0.1); 
+        }
+        @media (min-width: 768px) {
+            .a4-container {
+                padding: 15mm; /* 데스크탑용 패딩 */
+            }
+        }
+        table { border-collapse: collapse; width: 100%; border: 1px solid #000; }
+        th, td { 
+            border: 1px solid #000; 
+            padding: 5px; 
+            text-align: center; 
+            font-size: 14px;
+            word-break: keep-all;
+            white-space: nowrap; /* 테이블 내용 줄바꿈 방지 */
+            vertical-align: middle;
+        }
+        th { background-color: #e9ecef; }
+        .input-field { width: 100%; padding: 4px; border: 1px solid #ccc; border-radius: 4px; }
+        .input-field:focus { outline: none; border-color: #4f46e5; }
+        .btn { background-color: #4f46e5; color: white; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; transition: background-color 0.3s; }
+        .btn:hover { background-color: #4338ca; }
+        .btn-sm { padding: 4px 8px; font-size: 12px; }
+        .btn-danger { background-color: #dc2626; }
+        .btn-danger:hover { background-color: #b91c1c; }
+        .btn-print { background-color: #16a34a; }
+        .btn-print:hover { background-color: #15803d; }
+        .btn-pdf { background-color: #e11d48; }
+        .btn-pdf:hover { background-color: #be123c; }
+        .btn-excel { background-color: #166534; }
+        .btn-excel:hover { background-color: #14532d; }
+        .btn-pdf:disabled { background-color: #9ca3af; cursor: not-allowed; }
+        .order-btn { padding: 2px 6px; line-height: 1; }
+        .order-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+        @media print {
+            body { background-color: white; }
+            .a4-container { margin: 0; padding: 10mm; box-shadow: none; border: none; }
+            .no-print { display: none; }
+            th, td { font-size: 9pt; padding: 4px; }
+            .input-field { border: none; background-color: transparent; -webkit-print-color-adjust: exact; color-adjust: exact; }
+            table, th, td { border: 1px solid black !important; }
+        }
+    </style>
+</head>
+<body>
+    <div class="a4-container" id="log-content">
+        <header class="mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-center flex-grow">차량 운행 일지</h1>
+        </header>
+        
+        <div class="flex justify-end mb-4 no-print space-x-2">
+            <button onclick="downloadExcel()" class="btn btn-excel flex items-center justify-center space-x-2">
+                <span>Excel</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            </button>
+            <button onclick="downloadPDF()" class="btn btn-pdf flex items-center justify-center space-x-2">
+                <span>PDF</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+            </button>
+            <button onclick="window.print()" class="btn btn-print">인쇄하기</button>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div><label for="user-name" class="font-semibold">■ 성명:</label><input type="text" id="user-name" class="input-field mt-1"></div>
+            <div><label for="user-id" class="font-semibold">■ 사번:</label><input type="text" id="user-id" class="input-field mt-1"></div>
+            <div><label for="creation-date" class="font-semibold">■ 작성일자:</label><input type="date" id="creation-date" class="input-field mt-1"></div>
+        </div>
+        
+        <div class="mb-4 no-print">
+            <h3 id="form-title" class="font-semibold text-lg mb-2">운행 기록 추가</h3>
+            <div id="entry-form-container" class="p-4 border rounded-lg bg-gray-50">
+                 <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4">
+                    <div><label for="entry-date" class="block text-sm font-medium">일자</label><input type="date" id="entry-date" class="input-field mt-1"></div>
+                    <div>
+                        <label for="entry-fuel-type" class="block text-sm font-medium">유종</label>
+                        <select id="entry-fuel-type" class="input-field mt-1">
+                            <option value="B027">휘발유</option>
+                            <option value="D047">경유</option>
+                            <option value="K015">LPG</option>
+                        </select>
+                    </div>
+                     <div>
+                        <label for="entry-fuel-price" class="block text-sm font-medium">유가 (원/L)</label>
+                        <input type="number" id="entry-fuel-price" value="0" class="input-field mt-1">
+                    </div>
+                    <div class="md:col-span-3"><label for="entry-purpose" class="block text-sm font-medium">운행 목적</label><input type="text" id="entry-purpose" placeholder="예: 본사 출장" class="input-field mt-1"></div>
+                     <div class="md:col-span-1">
+                        <label for="entry-start" class="block text-sm font-medium">출발지</label>
+                        <input type="text" id="entry-start" placeholder="주소 또는 지명 입력" class="input-field mt-1">
+                    </div>
+                    <div class="md:col-span-1">
+                        <label for="entry-end" class="block text-sm font-medium">도착지</label>
+                        <input type="text" id="entry-end" placeholder="주소 또는 지명 입력" class="input-field mt-1">
+                    </div>
+                    <div class="md:col-span-1">
+                        <label for="entry-distance" class="block text-sm font-medium">주행거리 (km)</label>
+                         <div class="flex items-center space-x-2">
+                            <input type="number" id="entry-distance" value="0" class="input-field mt-1">
+                            <button type="button" onclick="window.open('https://map.naver.com/', '_blank')" class="btn btn-sm mt-1 bg-green-600 hover:bg-green-700 whitespace-nowrap">네이버맵 바로가기</button>
+                        </div>
+                        <p class="text-xs text-gray-500 mt-1">주행거리 확인</p>
+                    </div>
+                    <div><label for="entry-fuel-efficiency" class="block text-sm font-medium">연비 (km/L)</label><input type="number" id="entry-fuel-efficiency" value="10" class="input-field mt-1"></div>
+                    <div><label for="entry-depreciation-rate" class="block text-sm font-medium">감가율</label><input type="number" id="entry-depreciation-rate" value="1.2" step="0.1" class="input-field mt-1"></div>
+                    <div class="md:col-span-1"><label for="entry-remarks" class="block text-sm font-medium">비고 (동행자)</label><input type="text" id="entry-remarks" placeholder="동행자 성명 기입" class="input-field mt-1"></div>
+                </div>
+                <div class="mt-4 text-right">
+                    <div id="add-mode-buttons"><button id="add-entry-btn" class="btn">기록 추가</button></div>
+                    <div id="edit-mode-buttons" class="hidden"><button id="update-entry-btn" class="btn bg-green-600 hover:bg-green-700">수정 완료</button><button id="cancel-edit-btn" class="btn bg-gray-500 hover:bg-gray-600 ml-2">취소</button></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 테이블 가로 스크롤을 위한 래퍼 추가 -->
+        <div class="overflow-x-auto">
+            <table id="log-table" class="mb-4">
+                <thead>
+                    <tr>
+                        <th>일자</th>
+                        <th>출발지</th>
+                        <th>도착지</th>
+                        <th>목적</th>
+                        <th>유종</th>
+                        <th>연비</th>
+                        <th>주행(km)</th>
+                        <th>유가(원/L)</th>
+                        <th>비고</th>
+                        <th class="no-print">관리</th>
+                    </tr>
+                </thead>
+                <tbody id="log-table-body"></tbody>
+            </table>
+        </div>
+
+        <h3 class="font-semibold text-lg mb-2">정산 내역</h3>
+        <div class="overflow-x-auto">
+            <table>
+                 <tbody>
+                    <tr>
+                        <th>총 주행거리 (km)</th><td><span id="total-distance">0</span></td>
+                        <th>감가율</th><td class="font-bold"><span id="summary-depreciation-rate">1.2</span></td>
+                    </tr>
+                    <tr>
+                        <th>유류대 합계 (원)</th><td id="total-fuel-cost" class="font-bold">0</td>
+                         <th>총 경비 합계 (원)</th><td id="grand-total" class="font-bold text-red-600">0</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+<script>
+    let logEntries = [];
+    let editingEntryId = null;
+
+    const logTableBody = document.getElementById('log-table-body');
+    const formTitle = document.getElementById('form-title');
+    const addModeButtons = document.getElementById('add-mode-buttons');
+    const editModeButtons = document.getElementById('edit-mode-buttons');
+    const entryDateInput = document.getElementById('entry-date');
+    const creationDateInput = document.getElementById('creation-date');
+    const entryFuelTypeInput = document.getElementById('entry-fuel-type');
+    const entryFuelPriceInput = document.getElementById('entry-fuel-price');
+    const entryFuelEfficiencyInput = document.getElementById('entry-fuel-efficiency');
+    const entryDepreciationRateInput = document.getElementById('entry-depreciation-rate');
+    const summaryDepreciationRateSpan = document.getElementById('summary-depreciation-rate');
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const today = new Date().toISOString().split('T')[0];
+        entryDateInput.value = today;
+        creationDateInput.value = today;
+        
+        // 저장된 설정값 불러오기
+        const savedEfficiency = localStorage.getItem('fuelEfficiency');
+        const savedDepreciation = localStorage.getItem('depreciationRate');
+        if (savedEfficiency) {
+            entryFuelEfficiencyInput.value = savedEfficiency;
+        }
+        if (savedDepreciation) {
+            entryDepreciationRateInput.value = savedDepreciation;
+            summaryDepreciationRateSpan.textContent = savedDepreciation;
+        }
+
+        document.getElementById('add-entry-btn').addEventListener('click', handleAddEntry);
+        document.getElementById('update-entry-btn').addEventListener('click', handleUpdateEntry);
+        document.getElementById('cancel-edit-btn').addEventListener('click', cancelEdit);
+        entryDateInput.addEventListener('change', fetchAndSetFuelPrice);
+        entryFuelTypeInput.addEventListener('change', () => {
+            fetchAndSetFuelPrice();
+            updateFuelEfficiency();
+        });
+
+        // 설정값 변경 시 localStorage에 저장
+        entryFuelEfficiencyInput.addEventListener('input', () => {
+            localStorage.setItem('fuelEfficiency', entryFuelEfficiencyInput.value);
+            updateSummary();
+        });
+        entryDepreciationRateInput.addEventListener('input', () => {
+            const newRate = entryDepreciationRateInput.value
+            localStorage.setItem('depreciationRate', newRate);
+            summaryDepreciationRateSpan.textContent = newRate;
+            updateSummary();
+        });
+
+        renderLogEntries();
+        updateSummary();
+        fetchAndSetFuelPrice();
+    });
+
+    async function fetchOilPrice(date) {
+      const proxyServerUrl = 'https://opinet-proxy.vercel.app/api/proxy';
+      const formattedDate = date.replace(/-/g, '');
+      const requestUrl = `${proxyServerUrl}?date=${formattedDate}`;
+      try {
+        const response = await fetch(requestUrl);
+        if (!response.ok) throw new Error(`서버 응답 오류: ${response.status}`);
+        const data = await response.json();
+        if (data.RESULT && data.RESULT.OIL) {
+          return data.RESULT.OIL;
+        } else {
+          console.error("API 응답에 유가 정보가 없습니다:", data);
+          return null;
+        }
+      } catch (error) {
+        console.error('프록시 서버 호출 오류:', error);
+        return null;
+      }
+    }
+
+    async function fetchAndSetFuelPrice() {
+        const date = entryDateInput.value;
+        const fuelTypeCode = entryFuelTypeInput.value;
+        if (!date) return;
+        entryFuelPriceInput.value = "조회 중...";
+        const oilPrices = await fetchOilPrice(date);
+        if (oilPrices) {
+            const priceObject = oilPrices.find(o => o.PRODCD === fuelTypeCode);
+            entryFuelPriceInput.value = priceObject ? parseFloat(priceObject.PRICE) : 0;
+        } else {
+            entryFuelPriceInput.value = 0;
+        }
+    }
+
+    function updateFuelEfficiency() {
+        const fuelTypeCode = entryFuelTypeInput.value;
+        // 사용자가 직접 값을 바꾼 경우는 유지하고, 유종 변경 시에만 자동 설정
+        if(localStorage.getItem('fuelEfficiency')){
+            entryFuelEfficiencyInput.value = localStorage.getItem('fuelEfficiency');
+            return;
+        }
+        if (fuelTypeCode === 'K015') { // LPG
+            entryFuelEfficiencyInput.value = 7;
+        } else { // 휘발유 또는 경유
+            entryFuelEfficiencyInput.value = 10;
+        }
+    }
+    
+    async function processEntry(existingEntry = {}) {
+        const date = entryDateInput.value;
+        const start = document.getElementById('entry-start').value;
+        const end = document.getElementById('entry-end').value;
+        if (!date || !start || !end) {
+            console.error('오류: 일자, 출발지, 도착지를 모두 입력해야 합니다.');
+            return null;
+        }
+
+        const fuelPrice = parseFloat(entryFuelPriceInput.value) || 0;
+        const distance = parseFloat(document.getElementById('entry-distance').value) || 0;
+
+        const fuelTypeSelect = entryFuelTypeInput;
+        const fuelTypeCode = fuelTypeSelect.value;
+        const fuelTypeName = fuelTypeSelect.options[fuelTypeSelect.selectedIndex].text;
+        const fuelEfficiency = parseFloat(entryFuelEfficiencyInput.value) || 1;
+        
+        const entryData = {
+            id: existingEntry.id || Date.now(),
+            date, start, end, distance, fuelPrice, fuelTypeCode, fuelTypeName, fuelEfficiency,
+            purpose: document.getElementById('entry-purpose').value,
+            remarks: document.getElementById('entry-remarks').value,
+        };
+        return entryData;
+    }
+
+    async function handleAddEntry() {
+        const newEntry = await processEntry();
+        if (newEntry) {
+            logEntries.push(newEntry);
+            renderLogEntries();
+            updateSummary();
+            resetInputForm();
+        }
+    }
+
+    async function handleUpdateEntry() {
+        const entryIndex = logEntries.findIndex(e => e.id === editingEntryId);
+        if (entryIndex === -1) { cancelEdit(); return; }
+        
+        const updatedEntry = await processEntry(logEntries[entryIndex]);
+        if (updatedEntry) {
+            logEntries[entryIndex] = updatedEntry;
+            renderLogEntries();
+            updateSummary();
+            cancelEdit();
+        }
+    }
+
+    function renderLogEntries() {
+        logTableBody.innerHTML = logEntries.length === 0 ? `<tr><td colspan="10" class="text-gray-500 py-4">운행 기록이 없습니다.</td></tr>` : '';
+        logEntries.forEach((entry, index) => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td>${entry.date}</td>
+                <td>${entry.start}</td>
+                <td>${entry.end}</td>
+                <td class="text-left">${entry.purpose}</td>
+                <td>${entry.fuelTypeName}</td>
+                <td>${entry.fuelEfficiency.toLocaleString()}</td>
+                <td>${entry.distance.toLocaleString()}</td>
+                <td>${entry.fuelPrice ? entry.fuelPrice.toLocaleString() : 'N/A'}</td>
+                <td class="text-left">${entry.remarks || ''}</td>
+                <td class="no-print text-center"><div class="flex items-center justify-center space-x-1">
+                    <button onclick="startEdit(${entry.id})" class="btn btn-sm bg-yellow-500 hover:bg-yellow-600 p-1">수정</button>
+                    <button onclick="deleteEntry(${entry.id})" class="btn btn-danger btn-sm p-1">삭제</button>
+                    <button onclick="moveEntry(${index}, 'up')" ${index === 0 ? 'disabled' : ''} class="order-btn disabled:opacity-30">▲</button>
+                    <button onclick="moveEntry(${index}, 'down')" ${index === logEntries.length - 1 ? 'disabled' : ''} class="order-btn disabled:opacity-30">▼</button>
+                </div></td>`;
+            logTableBody.appendChild(tr);
+        });
+    }
+    
+    function startEdit(id) {
+        const entry = logEntries.find(e => e.id === id);
+        if (!entry) return;
+        editingEntryId = id;
+        entryDateInput.value = entry.date;
+        entryFuelTypeInput.value = entry.fuelTypeCode;
+        entryFuelPriceInput.value = entry.fuelPrice;
+        entryFuelEfficiencyInput.value = entry.fuelEfficiency;
+        document.getElementById('entry-distance').value = entry.distance;
+        document.getElementById('entry-purpose').value = entry.purpose;
+        document.getElementById('entry-start').value = entry.start;
+        document.getElementById('entry-end').value = entry.end;
+        document.getElementById('entry-remarks').value = entry.remarks;
+        formTitle.textContent = '운행 기록 수정';
+        addModeButtons.classList.add('hidden');
+        editModeButtons.classList.remove('hidden');
+        document.getElementById('entry-form-container').scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+
+    function cancelEdit() {
+        editingEntryId = null;
+        formTitle.textContent = '운행 기록 추가';
+        addModeButtons.classList.remove('hidden');
+        editModeButtons.classList.add('hidden');
+        resetInputForm();
+    }
+
+    function deleteEntry(id) {
+        logEntries = logEntries.filter(entry => entry.id !== id);
+        renderLogEntries();
+        updateSummary();
+    }
+
+    function moveEntry(index, direction) {
+        if (direction === 'up' && index > 0) {
+            [logEntries[index], logEntries[index - 1]] = [logEntries[index - 1], logEntries[index]];
+        } else if (direction === 'down' && index < logEntries.length - 1) {
+            [logEntries[index], logEntries[index + 1]] = [logEntries[index + 1], logEntries[index]];
+        }
+        renderLogEntries();
+    }
+
+    function updateSummary() {
+        const depreciationRate = parseFloat(entryDepreciationRateInput.value) || 1.2;
+        const totalDistance = logEntries.reduce((sum, entry) => sum + (entry.distance || 0), 0);
+        
+        const totalFuelCost = logEntries.reduce((sum, entry) => {
+            const efficiency = entry.fuelEfficiency || 1;
+            if (!entry.distance || !entry.fuelPrice) return sum;
+            const cost = (entry.distance / efficiency) * entry.fuelPrice;
+            return sum + cost;
+        }, 0);
+        
+        const grandTotal = totalFuelCost * depreciationRate;
+
+        document.getElementById('total-distance').textContent = totalDistance.toFixed(1).toLocaleString();
+        document.getElementById('total-fuel-cost').textContent = Math.round(totalFuelCost).toLocaleString();
+        document.getElementById('grand-total').textContent = Math.round(grandTotal).toLocaleString();
+    }
+
+    function resetInputForm() {
+        entryDateInput.value = new Date().toISOString().split('T')[0];
+        ['entry-start', 'entry-end', 'entry-purpose', 'entry-remarks', 'entry-distance'].forEach(id => document.getElementById(id).value = '');
+        entryFuelTypeInput.value = 'B027';
+        updateFuelEfficiency();
+        document.getElementById('entry-start').focus();
+        fetchAndSetFuelPrice();
+    }
+    
+    function downloadPDF() {
+        if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
+            alert('PDF 생성 라이브러리를 로드하는 중입니다. 잠시 후 다시 시도해주세요.');
+            return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const element = document.getElementById('log-content');
+        const buttons = element.querySelector('.no-print');
+        const pdfButton = document.querySelector('.btn-pdf');
+        
+        if (buttons) buttons.style.display = 'none';
+        if (pdfButton) {
+            pdfButton.disabled = true;
+            pdfButton.querySelector('span').textContent = '생성 중...';
+        }
+
+        html2canvas(element, { scale: 2, useCORS: true }).then(canvas => {
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const imgProps = pdf.getImageProperties(imgData);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+            
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            
+            const creationDate = document.getElementById('creation-date').value;
+            pdf.save(`차량운행일지_${creationDate || new Date().toISOString().slice(0,10)}.pdf`);
+
+        }).catch(err => {
+            console.error("PDF 생성 오류:", err);
+            alert("PDF 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.");
+        }).finally(() => {
+            if (buttons) buttons.style.display = 'flex';
+            if (pdfButton) {
+                 pdfButton.disabled = false;
+                 pdfButton.querySelector('span').textContent = 'PDF';
+            }
+        });
+    }
+
+    function downloadExcel() {
+        let sourceHTML = `
+            <html xmlns:x="urn:schemas-microsoft-com:office:excel">
+            <head>
+                <meta charset='utf-8'>
+                <!--[if gte mso 9]>
+                <xml>
+                    <x:ExcelWorkbook>
+                        <x:ExcelWorksheets>
+                            <x:ExcelWorksheet>
+                                <x:Name>운행일지</x:Name>
+                                <x:WorksheetOptions>
+                                    <x:PageSetup>
+                                        <x:Layout x:Orientation="Portrait"/>
+                                        <x:Header x:Margin="0.3"/>
+                                        <x:Footer x:Margin="0.3"/>
+                                        <x:PageMargins x:Bottom="0.7" x:Left="0.7" x:Right="0.7" x:Top="0.7"/>
+                                    </x:PageSetup>
+                                    <x:Print>
+                                        <x:ValidPrinterInfo/>
+                                        <x:HorizontalResolution>600</x:HorizontalResolution>
+                                        <x:VerticalResolution>600</x:VerticalResolution>
+                                    </x:Print>
+                                </x:WorksheetOptions>
+                            </x:ExcelWorksheet>
+                        </x:ExcelWorksheets>
+                    </x:ExcelWorkbook>
+                </xml>
+                <![endif]-->
+                <style>
+                    body { font-family: 'Malgun Gothic', sans-serif; }
+                    table { border-collapse: collapse; width: 100%; }
+                    th, td {
+                        border: .5pt solid black;
+                        padding: 5px;
+                        text-align: center;
+                        vertical-align: middle;
+                        font-size: 10pt;
+                    }
+                    th { background-color: #E9ECEF; font-weight: bold; }
+                    .text-left { text-align: left !important; }
+                    h1 { text-align: center; font-size: 24pt; font-weight: bold; }
+                    .user-info-table td { border: none !important; text-align: left; font-weight: bold; }
+                    .summary-table th, .summary-table td { font-weight: bold; }
+                </style>
+            </head>
+            <body>
+        `;
+        
+        sourceHTML += `<table><tr><td colspan="9" style="border:none; text-align:center; font-size:24pt; font-weight:bold;">차량 운행 일지</td></tr><tr><td colspan="9" style="border:none;"></td></tr></table>`;
+
+        const name = document.getElementById('user-name').value;
+        const userId = document.getElementById('user-id').value;
+        const creationDate = document.getElementById('creation-date').value;
+        sourceHTML += `
+            <table class="user-info-table">
+                <tr>
+                    <td style="border:none;">■ 성명: ${name}</td>
+                    <td style="border:none;">■ 사번: ${userId}</td>
+                    <td style="border:none;">■ 작성일자: ${creationDate}</td>
+                </tr>
+            </table><br/>
+        `;
+        
+        const logTable = document.getElementById('log-table').cloneNode(true);
+        const manageHeader = logTable.querySelector('thead th:last-child');
+        if (manageHeader) manageHeader.remove();
+        const manageCells = logTable.querySelectorAll('tbody td:last-child');
+        manageCells.forEach(cell => cell.remove());
+        sourceHTML += logTable.outerHTML;
+
+        sourceHTML += `<br/><h3>정산 내역</h3>`;
+        sourceHTML += `
+            <table class="summary-table">
+                <tr>
+                    <th>총 주행거리 (km)</th><td>${document.getElementById('total-distance').textContent}</td>
+                    <th>감가율</th><td>${summaryDepreciationRateSpan.textContent}</td>
+                </tr>
+                <tr>
+                    <th>유류대 합계 (원)</th><td>${document.getElementById('total-fuel-cost').textContent}</td>
+                    <th>총 경비 합계 (원)</th><td>${document.getElementById('grand-total').textContent}</td>
+                </tr>
+            </table>
+        `;
+
+        sourceHTML += `</body></html>`;
+    
+        const blob = new Blob([sourceHTML], {
+            type: 'application/vnd.ms-excel'
+        });
+    
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        
+        const fileNameDate = document.getElementById('creation-date').value;
+        a.download = `차량운행일지_${fileNameDate || new Date().toISOString().slice(0,10)}.xls`;
+        
+        document.body.appendChild(a);
+        a.click();
+        
+        setTimeout(() => {
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        }, 100);
+    }
+</script>
+</body>
+</html>

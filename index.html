@@ -169,19 +169,20 @@
     const summaryDepreciationRateSpan = document.getElementById('summary-depreciation-rate');
 
     document.addEventListener('DOMContentLoaded', () => {
-        loadDataFromUrl(); // URL에서 데이터 로드 (가장 먼저 실행)
+        const isDataLoadedFromUrl = loadDataFromUrl(); 
 
         const today = new Date().toISOString().split('T')[0];
-        // URL에 데이터가 없는 경우에만 오늘 날짜로 설정
         if (!creationDateInput.value) creationDateInput.value = today;
         if (!entryDateInput.value) entryDateInput.value = today;
         
-        const savedEfficiency = localStorage.getItem('fuelEfficiency');
-        const savedDepreciation = localStorage.getItem('depreciationRate');
-        if (savedEfficiency) entryFuelEfficiencyInput.value = savedEfficiency;
-        if (savedDepreciation) {
-            entryDepreciationRateInput.value = savedDepreciation;
-            summaryDepreciationRateSpan.textContent = savedDepreciation;
+        if (!isDataLoadedFromUrl) {
+            const savedEfficiency = localStorage.getItem('fuelEfficiency');
+            const savedDepreciation = localStorage.getItem('depreciationRate');
+            if (savedEfficiency) entryFuelEfficiencyInput.value = savedEfficiency;
+            if (savedDepreciation) {
+                entryDepreciationRateInput.value = savedDepreciation;
+                summaryDepreciationRateSpan.textContent = savedDepreciation;
+            }
         }
 
         document.getElementById('add-entry-btn').addEventListener('click', handleAddEntry);
@@ -206,7 +207,7 @@
 
         renderLogEntries();
         updateSummary();
-        if (logEntries.length === 0) { // 공유 데이터가 없을 때만 유가 조회
+        if (!isDataLoadedFromUrl) {
             fetchAndSetFuelPrice();
         }
     });
@@ -235,12 +236,13 @@
                     localStorage.setItem('fuelEfficiency', entryFuelEfficiencyInput.value);
                     localStorage.setItem('depreciationRate', entryDepreciationRateInput.value);
                 }
+                return true; // 데이터 로드 성공
             }
         } catch(e) {
             console.error("URL 데이터 로딩 오류:", e);
         }
+        return false; // 데이터 없음 또는 오류
     }
-
 
     async function fetchOilPrice(date) {
         const proxyServerUrl = 'https://opinet-proxy.vercel.app/api/proxy';
@@ -498,9 +500,9 @@
         };
 
         const jsonString = JSON.stringify(dataToShare);
-        const encodedData = btoa(encodeURIComponent(jsonString));
+        const encodedData = btoa(encodeURIComponent(jsonString).replace(/%([0-9A-F]{2})/g, (match, p1) => String.fromCharCode('0x' + p1)));
         
-        const baseUrl = window.location.origin + window.location.pathname;
+        const baseUrl = window.location.href.split('?')[0];
         const shareUrl = `${baseUrl}?data=${encodedData}`;
 
         Kakao.Share.sendDefault({

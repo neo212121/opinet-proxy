@@ -32,7 +32,7 @@
             text-align: center; 
             font-size: 14px;
             word-break: keep-all;
-            white-space: nowrap; /* 테이블 내용 줄바꿈 방지 */
+            white-space: nowrap;
             vertical-align: middle;
         }
         th { background-color: #e9ecef; }
@@ -55,11 +55,34 @@
 
         @media print {
             body { background-color: white; }
-            .a4-container { margin: 0; padding: 10mm; box-shadow: none; border: none; }
-            .no-print { display: none; }
+            .a4-container {
+                width: 100%;
+                max-width: none;
+                margin: 0;
+                padding: 10mm; 
+                box-shadow: none;
+                border: none;
+                min-height: auto; /* 빈 페이지 방지 */
+                height: auto; /* 빈 페이지 방지 */
+            }
+            .no-print {
+                display: none !important; /* 버튼 숨김 강화 */
+            }
             th, td { font-size: 9pt; padding: 4px; }
-            .input-field { border: none; background-color: transparent; -webkit-print-color-adjust: exact; color-adjust: exact; }
+            .input-field {
+                border: none;
+                background-color: transparent;
+                -webkit-print-color-adjust: exact; /* 구형 브라우저 호환성 */
+                print-color-adjust: exact; /* 표준 속성 */
+                padding: 1px;
+            }
             table, th, td { border: 1px solid black !important; }
+            .overflow-x-auto {
+                overflow-x: visible !important; /* 인쇄 시 가로 스크롤 제거 */
+            }
+            .user-info-item > .input-field {
+                 font-size: 9pt; /* 인쇄 시 다른 폰트와 크기 맞춤 */
+            }
         }
     </style>
 </head>
@@ -86,9 +109,18 @@
         </div>
 
         <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-            <div><label for="user-name" class="font-semibold">■ 성명:</label><input type="text" id="user-name" class="input-field mt-1"></div>
-            <div><label for="user-id" class="font-semibold">■ 사번:</label><input type="text" id="user-id" class="input-field mt-1"></div>
-            <div><label for="creation-date" class="font-semibold">■ 작성일자:</label><input type="date" id="creation-date" class="input-field mt-1"></div>
+            <div class="flex items-baseline user-info-item">
+                <label for="user-name" class="font-semibold whitespace-nowrap mr-2">■ 성명:</label>
+                <input type="text" id="user-name" class="input-field">
+            </div>
+             <div class="flex items-baseline user-info-item">
+                <label for="user-id" class="font-semibold whitespace-nowrap mr-2">■ 사번:</label>
+                <input type="text" id="user-id" class="input-field">
+            </div>
+             <div class="flex items-baseline user-info-item">
+                <label for="creation-date" class="font-semibold whitespace-nowrap mr-2">■ 작성일자:</label>
+                <input type="date" id="creation-date" class="input-field">
+            </div>
         </div>
         
         <div class="mb-4 no-print">
@@ -136,7 +168,6 @@
             </div>
         </div>
         
-        <!-- 테이블 가로 스크롤을 위한 래퍼 추가 -->
         <div class="overflow-x-auto">
             <table id="log-table" class="mb-4">
                 <thead>
@@ -195,7 +226,6 @@
         entryDateInput.value = today;
         creationDateInput.value = today;
         
-        // 저장된 설정값 불러오기
         const savedEfficiency = localStorage.getItem('fuelEfficiency');
         const savedDepreciation = localStorage.getItem('depreciationRate');
         if (savedEfficiency) {
@@ -215,7 +245,6 @@
             updateFuelEfficiency();
         });
 
-        // 설정값 변경 시 localStorage에 저장
         entryFuelEfficiencyInput.addEventListener('input', () => {
             localStorage.setItem('fuelEfficiency', entryFuelEfficiencyInput.value);
             updateSummary();
@@ -268,14 +297,13 @@
 
     function updateFuelEfficiency() {
         const fuelTypeCode = entryFuelTypeInput.value;
-        // 사용자가 직접 값을 바꾼 경우는 유지하고, 유종 변경 시에만 자동 설정
         if(localStorage.getItem('fuelEfficiency')){
             entryFuelEfficiencyInput.value = localStorage.getItem('fuelEfficiency');
             return;
         }
-        if (fuelTypeCode === 'K015') { // LPG
+        if (fuelTypeCode === 'K015') { 
             entryFuelEfficiencyInput.value = 7;
-        } else { // 휘발유 또는 경유
+        } else {
             entryFuelEfficiencyInput.value = 10;
         }
     }
@@ -423,7 +451,7 @@
     }
     
     function downloadPDF() {
-        if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
+        if (typeof window.jspdf === 'undefined' || typeof window.html2canvas === 'undefined') {
             alert('PDF 생성 라이브러리를 로드하는 중입니다. 잠시 후 다시 시도해주세요.');
             return;
         }

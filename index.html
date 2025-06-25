@@ -6,7 +6,7 @@
     <title>차량 운행 일지</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
-    <!-- PDF 생성을 위한 라이브러리 -->
+    <!-- PDF 생성을 위한 라이브러리 (이미지 기반) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <!-- 카카오톡 공유 SDK -->
@@ -15,15 +15,17 @@
         body { font-family: 'Noto Sans KR', sans-serif; background-color: #f0f2f5; }
         .a4-container {
              width: 100%;
-             max-width: 210mm;
+             max-width: 210mm; /* 데스크탑에서는 A4 너비 유지 */
              min-height: 297mm; 
-             padding: 1rem;
+             padding: 1rem; /* 모바일용 패딩 */
              margin: 20px auto; 
              background: white; 
              box-shadow: 0 0 10px rgba(0,0,0,0.1); 
         }
         @media (min-width: 768px) {
-            .a4-container { padding: 15mm; }
+            .a4-container {
+                padding: 15mm; /* 데스크탑용 패딩 */
+            }
         }
         table { border-collapse: collapse; width: 100%; border: 1px solid #000; }
         th, td { 
@@ -167,9 +169,12 @@
     const summaryDepreciationRateSpan = document.getElementById('summary-depreciation-rate');
 
     document.addEventListener('DOMContentLoaded', () => {
+        loadDataFromUrl(); // URL에서 데이터 로드 (가장 먼저 실행)
+
         const today = new Date().toISOString().split('T')[0];
-        entryDateInput.value = today;
-        creationDateInput.value = today;
+        // URL에 데이터가 없는 경우에만 오늘 날짜로 설정
+        if (!entryDateInput.value) entryDateInput.value = today;
+        if (!creationDateInput.value) creationDateInput.value = today;
         
         const savedEfficiency = localStorage.getItem('fuelEfficiency');
         const savedDepreciation = localStorage.getItem('depreciationRate');
@@ -201,8 +206,41 @@
 
         renderLogEntries();
         updateSummary();
-        fetchAndSetFuelPrice();
+        if (!logEntries.length) { // 공유 데이터가 없을 때만 유가 조회
+            fetchAndSetFuelPrice();
+        }
     });
+
+    function loadDataFromUrl() {
+        try {
+            const urlParams = new URLSearchParams(window.location.search);
+            const encodedData = urlParams.get('data');
+
+            if (encodedData) {
+                const jsonString = decodeURIComponent(atob(encodedData).split('').map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)).join(''));
+                const loadedData = JSON.parse(jsonString);
+
+                if (loadedData.logEntries) {
+                    logEntries = loadedData.logEntries;
+                }
+                if (loadedData.userInfo) {
+                    document.getElementById('user-name').value = loadedData.userInfo.name || '';
+                    document.getElementById('user-id').value = loadedData.userInfo.id || '';
+                    creationDateInput.value = loadedData.userInfo.creationDate || new Date().toISOString().split('T')[0];
+                }
+                if (loadedData.settings) {
+                    entryFuelEfficiencyInput.value = loadedData.settings.efficiency || '10';
+                    entryDepreciationRateInput.value = loadedData.settings.depreciation || '1.2';
+                    summaryDepreciationRateSpan.textContent = loadedData.settings.depreciation || '1.2';
+                    localStorage.setItem('fuelEfficiency', entryFuelEfficiencyInput.value);
+                    localStorage.setItem('depreciationRate', entryDepreciationRateInput.value);
+                }
+            }
+        } catch(e) {
+            console.error("URL 데이터 로딩 오류:", e);
+        }
+    }
+
 
     async function fetchOilPrice(date) {
         const proxyServerUrl = 'https://opinet-proxy.vercel.app/api/proxy';
@@ -436,7 +474,6 @@
             alert("카카오 SDK를 불러오지 못했습니다.");
             return;
         }
-        // 카카오 SDK 초기화
         try {
             if(!Kakao.isInitialized()) {
                 Kakao.init('3ca15973dbdb555375f945900c9d965c');
@@ -447,18 +484,34 @@
             return;
         }
 
-        Kakao.Share.sendDefault({
-            objectType: 'text',
-            text: `[차량 운행 일지 요약]
-- 작성자: ${document.getElementById('user-name').value}
-- 작성일: ${document.getElementById('creation-date').value}
-- 총 운행기록: ${logEntries.length}건
-- 총 주행거리: ${document.getElementById('total-distance').textContent} km
-- 총 경비: ${document.getElementById('grand-total').textContent} 원`,
-            link: {
-                mobileWebUrl: window.location.href,
-                webUrl: window.location.href,
+        const dataToShare = {
+            logEntries: logEntries,
+            userInfo: {
+                name: document.getElementById('user-name').value,
+                id: document.getElementById('user-id').value,
+                creationDate: document.getElementById('creation-date').value,
             },
+            settings: {
+                efficiency: entryFuelEfficiencyInput.value,
+                depreciation: entryDepreciationRateInput.value,
+            }
+        };
+
+        const jsonString = JSON.stringify(dataToShare);
+        const encodedData = btoa(encodeURIComponent(jsonString));
+        
+        const baseUrl = window.location.origin + window.location.pathname;
+        const shareUrl = `${baseUrl}?data=${encodedData}`;
+
+        Kakao.Share.sendDefault({
+            objectType: 'feed',
+            content: {
+                title: `[차량 운행 일지] ${document.getElementById('creation-date').value}`,
+                description: `${document.getElementById('user-name').value}님의 운행 기록입니다.`,
+                imageUrl: 'https://placehold.co/600x315/166534/FFFFFF?text=차량+운행+일지',
+                link: { mobileWebUrl: shareUrl, webUrl: shareUrl },
+            },
+            buttons: [{ title: '운행 일지 확인하기', link: { mobileWebUrl: shareUrl, webUrl: shareUrl } }],
         });
     }
 

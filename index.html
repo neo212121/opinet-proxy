@@ -173,8 +173,8 @@
 
         const today = new Date().toISOString().split('T')[0];
         // URL에 데이터가 없는 경우에만 오늘 날짜로 설정
-        if (!entryDateInput.value) entryDateInput.value = today;
         if (!creationDateInput.value) creationDateInput.value = today;
+        if (!entryDateInput.value) entryDateInput.value = today;
         
         const savedEfficiency = localStorage.getItem('fuelEfficiency');
         const savedDepreciation = localStorage.getItem('depreciationRate');
@@ -206,7 +206,7 @@
 
         renderLogEntries();
         updateSummary();
-        if (!logEntries.length) { // 공유 데이터가 없을 때만 유가 조회
+        if (logEntries.length === 0) { // 공유 데이터가 없을 때만 유가 조회
             fetchAndSetFuelPrice();
         }
     });

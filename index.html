@@ -527,10 +527,10 @@ async function downloadExcel() {
             row.getCell(3).value = entry.start;     // C열
             row.getCell(4).value = entry.end;       // D열
             
-            // 2. 운행목적 (E열) - 문자열 강제 변환
+            // 2. 운행목적 (E열) - 문자열 강제 변환 (10 덮어쓰기 방지)
             row.getCell(5).value = String(entry.purpose || ''); 
             
-            // F, G열 입력 생략 (E열 덮어쓰기 방지)
+            // F, G열 입력 생략
 
             // 3. 주행거리 (H열)
             row.getCell(8).value = parseFloat(entry.distance) || 0; 
@@ -538,7 +538,7 @@ async function downloadExcel() {
             // 4. 비고 (I열)
             row.getCell(9).value = String(entry.remarks || '');      
             
-            // 5. 통행료, 주차료 등 (값이 없거나 0이면 빈칸)
+            // 5. 통행료, 주차료 등 (값이 없으면 빈칸)
             row.getCell(10).value = parseInt(entry.toll) || '';      // J열
             row.getCell(11).value = parseInt(entry.parking) || '';   // K열
             row.getCell(12).value = parseInt(entry.etc) || '';       // L열
@@ -575,11 +575,10 @@ async function downloadExcel() {
         sheet.getCell('G31').value = efficiency;
         sheet.getCell('H31').value = depRateVal;     // 감가율
 
-        // [핵심 수정] I31: 요청하신 수식 입력 (=E31*G31*F31/G10)
-        sheet.getCell('I31').value = { formula: 'E31*G31*F31/G10' };
+        // [핵심 수정] I31: 요청하신 새 수식 적용 (IFERROR 포함)
+        sheet.getCell('I31').value = { formula: 'IFERROR(E31*H31*F31/G31,0)' };
 
-        // [핵심 수정] G32: I31 값을 불러오는 수식 입력 (=I31)
-        // (요청하신 =I32는 I31의 아래 빈칸이므로, 금액이 있는 I31을 참조하도록 설정했습니다)
+        // G32: I31 값을 불러오는 수식
         sheet.getCell('G32').value = { formula: 'I31' };
 
         // 파일 저장

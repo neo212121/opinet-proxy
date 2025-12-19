@@ -527,21 +527,18 @@ async function downloadExcel() {
             row.getCell(3).value = entry.start;     // C열
             row.getCell(4).value = entry.end;       // D열
             
-            // 2. [핵심 수정] 운행목적 (E열)
-            // 숫자로 오인되지 않도록 문자열로 변환하여 입력
-            // 병합된 셀 문제 방지를 위해 F(유종), G(연비) 입력은 생략합니다. (E열이 덮어써지지 않도록)
+            // 2. 운행목적 (E열) - 문자열 강제 변환
             row.getCell(5).value = String(entry.purpose || ''); 
             
-            // F(6), G(7)열은 작성하지 않음 (E12에 '10'이 나오는 문제 원천 차단)
-            // row.getCell(6).value = entry.fuelTypeName; 
-            // row.getCell(7).value = parseFloat(entry.fuelEfficiency) || 0; 
+            // F, G열 입력 생략 (E열 덮어쓰기 방지)
 
-            row.getCell(8).value = parseFloat(entry.distance) || 0; // H열: 주행거리
+            // 3. 주행거리 (H열)
+            row.getCell(8).value = parseFloat(entry.distance) || 0; 
 
-            // 3. 비고 (I열)
+            // 4. 비고 (I열)
             row.getCell(9).value = String(entry.remarks || '');      
             
-            // 4. [수정] 통행료, 주차료 등 (0이면 빈칸으로 표시)
+            // 5. 통행료, 주차료 등 (값이 없거나 0이면 빈칸)
             row.getCell(10).value = parseInt(entry.toll) || '';      // J열
             row.getCell(11).value = parseInt(entry.parking) || '';   // K열
             row.getCell(12).value = parseInt(entry.etc) || '';       // L열
@@ -553,13 +550,10 @@ async function downloadExcel() {
             row.commit();
         });
 
-        // --- [E. 하단 정산 내역] ---
+        // --- [E. 하단 정산 내역 및 수식 적용] ---
         const totalDistText = document.getElementById('total-distance').textContent;
         const totalDistVal = parseFloat(totalDistText.replace(/,/g, '')) || 0;
         
-        const grandTotalText = document.getElementById('grand-total').textContent;
-        const grandTotalVal = parseFloat(grandTotalText.replace(/,/g, '')) || 0;
-
         const depRateText = document.getElementById('summary-depreciation-rate').textContent;
         const depRateVal = parseFloat(depRateText) || 1.2;
 
@@ -567,23 +561,26 @@ async function downloadExcel() {
         sheet.getCell('A27').value = '총 주행거리';
         sheet.getCell('H27').value = totalDistVal;
 
-        // [수정] E21, G21에 불필요한 내용이 나오지 않도록 강제 삭제
+        // [기타 셀 정리]
         sheet.getCell('E21').value = ''; 
         sheet.getCell('G21').value = '';
 
-        // [31번 줄] 상세 정산 데이터 (I31에 총 금액 입력)
+        // [31번 줄] 데이터 입력
         sheet.getCell('D31').value = mainFuelName;   // 유종
         sheet.getCell('E31').value = totalDistVal;   // 총 운행거리
         sheet.getCell('F31').value = mainFuelPrice;  // 유가
         
-        // 연비 (G31은 요약표이므로 반드시 표시)
+        // 연비
         const efficiency = (mainFuelType === 'K015') ? 7 : 10;
         sheet.getCell('G31').value = efficiency;
-
         sheet.getCell('H31').value = depRateVal;     // 감가율
-        
-        // [수정] 총 경비 합계 -> I31 (요청사항 반영)
-        sheet.getCell('I31').value = grandTotalVal;  
+
+        // [핵심 수정] I31: 요청하신 수식 입력 (=E31*G31*F31/G10)
+        sheet.getCell('I31').value = { formula: 'E31*G31*F31/G10' };
+
+        // [핵심 수정] G32: I31 값을 불러오는 수식 입력 (=I31)
+        // (요청하신 =I32는 I31의 아래 빈칸이므로, 금액이 있는 I31을 참조하도록 설정했습니다)
+        sheet.getCell('G32').value = { formula: 'I31' };
 
         // 파일 저장
         const buffer = await workbook.xlsx.writeBuffer();

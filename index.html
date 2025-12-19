@@ -115,7 +115,7 @@
                     <div class="md:col-span-1"><label for="entry-distance" class="block text-sm font-medium">주행거리 (km)</label><div class="flex items-center space-x-2"><input type="number" id="entry-distance" value="0" class="input-field mt-1"><button type="button" onclick="window.open('https://map.naver.com/', '_blank')" class="btn btn-sm mt-1 bg-green-600 hover:bg-green-700 whitespace-nowrap">네이버맵 바로가기</button></div><p class="text-xs text-gray-500 mt-1">주행거리 확인</p></div>
                     <div><label for="entry-fuel-efficiency" class="block text-sm font-medium">연비 (km/L)</label><input type="number" id="entry-fuel-efficiency" value="10" class="input-field mt-1"></div>
                     <div><label for="entry-depreciation-rate" class="block text-sm font-medium">감가율</label><input type="number" id="entry-depreciation-rate" value="1.2" step="0.1" class="input-field mt-1"></div>
-                    <div class="md:col-span-1"><label for="entry-remarks" class="block text-sm font-medium">비고 (동행자)</label><input type="text" id="entry-remarks" placeholder="동행자 성명 기입" class="input-field mt-1"></div>
+                    <div class="md:col-span-1"><label for="entry-remarks" class="block text-sm font-medium">비고(동행자, 왕복 등)</label><input type="text" id="entry-remarks" placeholder="내용 입력" class="input-field mt-1"></div>
                 </div>
                 <div class="mt-4 text-right">
                     <div id="add-mode-buttons"><button id="add-entry-btn" class="btn">기록 추가</button></div>
@@ -485,18 +485,27 @@ async function downloadExcel() {
         sheet.getCell('H5').value = document.getElementById('user-id').value;      // 사번
         sheet.getCell('C6').value = document.getElementById('vehicle-number').value; // 차량번호
 
-        // --- [유가 정보 (I5~I7)] ---
-        // 현재 선택된 유종과 유가를 확인하여 해당 칸에 입력
-        const currentFuelType = document.getElementById('entry-fuel-type').value; // B027(휘발유), D047(경유), K015(LPG)
+        // --- [기준 연비 및 유가 정보 (H5~I7)] ---
+        // 1. 연비(H열) 고정값 입력 (요청사항)
+        sheet.getCell('H5').value = 10;
+        sheet.getCell('H6').value = 10;
+        sheet.getCell('H7').value = 7;
+
+        // 2. 유가(I열) 초기화 (기존 값 지우기)
+        sheet.getCell('I5').value = '';
+        sheet.getCell('I6').value = '';
+        sheet.getCell('I7').value = '';
+
+        // 3. 선택된 유종에 따라 해당 위치에만 유가 입력
+        const currentFuelType = document.getElementById('entry-fuel-type').value; 
         const currentPrice = parseFloat(document.getElementById('entry-fuel-price').value) || 0;
 
-        // 선택된 유종에 맞는 칸에만 가격 입력 (나머지는 공란 유지)
         if (currentFuelType === 'B027') {
-            sheet.getCell('I5').value = currentPrice; // 휘발유
+            sheet.getCell('I5').value = currentPrice; // 휘발유 -> I5
         } else if (currentFuelType === 'D047') {
-            sheet.getCell('I6').value = currentPrice; // 경유
+            sheet.getCell('I6').value = currentPrice; // 경유 -> I6
         } else if (currentFuelType === 'K015') {
-            sheet.getCell('I7').value = currentPrice; // LPG
+            sheet.getCell('I7').value = currentPrice; // LPG -> I7
         }
 
         // --- [운행 기록 데이터 (12번 줄부터 시작)] ---
@@ -505,28 +514,37 @@ async function downloadExcel() {
             const currentRow = startRow + index;
             const row = sheet.getRow(currentRow);
             
-            // 데이터 입력
+            // 데이터 입력 (NaN 오류 방지를 위해 || 0 처리 추가)
             row.getCell(1).value = index + 1;                  // A열: No
             row.getCell(2).value = entry.date;                 // B열: 일자
             row.getCell(3).value = entry.start;                // C열: 출발지
             row.getCell(4).value = entry.end;                  // D열: 도착지
-            row.getCell(5).value = entry.purpose;              // E열: 운행목적
+            
+            // [요청] 운행목적 -> E12 (E열, 인덱스 5)
+            row.getCell(5).value = entry.purpose;              
+
             row.getCell(6).value = entry.fuelTypeName;         // F열: 유종
-            row.getCell(7).value = parseFloat(entry.fuelEfficiency); // G열: 연비
-            row.getCell(8).value = parseFloat(entry.distance);       // H열: 주행거리
-            row.getCell(9).value = parseFloat(entry.fuelPrice);      // I열: 유가
-            row.getCell(10).value = parseInt(entry.toll);      // J열: 통행료
-            row.getCell(11).value = parseInt(entry.parking);   // K열: 주차료
-            row.getCell(12).value = parseInt(entry.etc);       // L열: 기타
-            row.getCell(13).value = parseInt(entry.total);     // M열: 계
-            row.getCell(14).value = entry.remarks;             // N열: 비고
+            row.getCell(7).value = parseFloat(entry.fuelEfficiency) || 0; // G열: 연비
+            row.getCell(8).value = parseFloat(entry.distance) || 0;       // H열: 주행거리
+            
+            // [요청] 비고 -> I12 (I열, 인덱스 9)
+            row.getCell(9).value = entry.remarks;      
+
+            // [오류 해결] J열 NaN 원인: parseInt가 빈 값을 받아서 발생 -> || 0 으로 해결
+            row.getCell(10).value = parseInt(entry.toll) || 0;      // J열: 통행료
+            row.getCell(11).value = parseInt(entry.parking) || 0;   // K열: 주차료
+            row.getCell(12).value = parseInt(entry.etc) || 0;       // L열: 기타
+            row.getCell(13).value = parseInt(entry.total) || 0;     // M열: 계
+            
+            // N열은 기존 비고였으나 I열로 옮겼으므로 비워둠 (필요시 추가)
+            row.getCell(14).value = '';             
 
             row.commit();
         });
 
-        // --- [하단 정산 내역 (27행, 31행)] ---
+        // --- [하단 정산 내역] ---
         
-        // 화면에 계산된 값 가져오기 (쉼표 제거 후 숫자로 변환)
+        // 데이터 가져오기 및 숫자 변환 (콤마 제거)
         const totalDistText = document.getElementById('total-distance').textContent;
         const totalDistVal = parseFloat(totalDistText.replace(/,/g, '')) || 0;
         
@@ -536,31 +554,26 @@ async function downloadExcel() {
         const depRateText = document.getElementById('summary-depreciation-rate').textContent;
         const depRateVal = parseFloat(depRateText) || 1.2;
 
-        // [27번 줄 설정]
-        sheet.getCell('A27').value = '총 주행거리';   // 텍스트 강제 입력
-        sheet.getCell('H27').value = totalDistVal;   // 총 주행거리 값 (기존 A열에서 H열로 이동)
+        // [27번 줄] 총 주행거리
+        sheet.getCell('A27').value = '총 주행거리';
+        sheet.getCell('H27').value = totalDistVal;
 
-        // [31번 줄 설정]
-        // D31: 유종 (현재 선택된 값)
+        // [G21 셀] 총 금액 한글 표시 ("n원")
+        sheet.getCell('G21').value = grandTotalText + '원';
+
+        // [31번 줄] 상세 정산
         const fuelTypeName = document.getElementById('entry-fuel-type').options[document.getElementById('entry-fuel-type').selectedIndex].text;
-        sheet.getCell('D31').value = fuelTypeName;
-
-        // E31: 총 운행거리 (H27과 동일값)
-        sheet.getCell('E31').value = totalDistVal;
-
-        // F31: 유가 (원/L)
-        sheet.getCell('F31').value = currentPrice;
-
-        // G31: 연비 (유종에 맞춰 10 또는 7)
+        
+        sheet.getCell('D31').value = fuelTypeName;   // 유종
+        sheet.getCell('E31').value = totalDistVal;   // 총 운행거리
+        sheet.getCell('F31').value = currentPrice;   // 유가
+        
+        // 연비 (유종에 따라 10 또는 7)
         const efficiency = (currentFuelType === 'K015') ? 7 : 10;
         sheet.getCell('G31').value = efficiency;
 
-        // H31: 감가율 (1.2)
-        sheet.getCell('H31').value = depRateVal;
-
-        // I31: 총 금액 (J28에 있던 금액을 여기로)
-        sheet.getCell('I31').value = grandTotalVal;
-
+        sheet.getCell('H31').value = depRateVal;     // 감가율
+        sheet.getCell('I31').value = grandTotalVal;  // 총 금액
 
         // 6. 파일 저장
         const buffer = await workbook.xlsx.writeBuffer();

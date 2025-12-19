@@ -460,198 +460,98 @@
         });
     }
 
- async function downloadExcel() {
-    // 1. 엑셀 워크북 생성
-    const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet('유류대정산서');
+async function downloadExcel() {
+    try {
+        const btn = document.querySelector('.btn-excel');
+        const originalText = btn.innerHTML;
+        btn.disabled = true;
+        btn.innerHTML = '<span>생성 중...</span>';
 
-    // 2. 기본 열 너비 설정 (양식에 맞게 조정)
-    sheet.columns = [
-        { width: 6 },  // A: No
-        { width: 12 }, // B: 일자
-        { width: 15 }, // C: 출발지
-        { width: 15 }, // D: 도착지
-        { width: 20 }, // E: 운행목적
-        { width: 10 }, // F: 유종
-        { width: 8 },  // G: 연비
-        { width: 10 }, // H: 주행거리
-        { width: 10 }, // I: 유류단가
-        { width: 10 }, // J: 통행료
-        { width: 10 }, // K: 주차료
-        { width: 10 }, // L: 기타
-        { width: 12 }, // M: 계
-        { width: 20 }  // N: 비고
-    ];
+        // 1. 서버(프로젝트 폴더)에 있는 원본 엑셀 양식 파일을 가져옵니다.
+        // 주의: 파일명이 정확해야 하며, index.html과 같은 경로(또는 public 폴더)에 있어야 합니다.
+        const response = await fetch('./유류대정산서_양식.xlsx');
+        if (!response.ok) {
+            throw new Error('엑셀 양식 파일을 찾을 수 없습니다. (유류대정산서_양식.xlsx)');
+        }
+        const arrayBuffer = await response.arrayBuffer();
 
-    // 3. 스타일 정의 (테두리 및 정렬)
-    const borderStyle = {
-        top: { style: 'thin' },
-        left: { style: 'thin' },
-        bottom: { style: 'thin' },
-        right: { style: 'thin' }
-    };
-    const centerStyle = { vertical: 'middle', horizontal: 'center' };
-    const rightStyle = { vertical: 'middle', horizontal: 'right' };
+        // 2. ExcelJS로 파일을 읽습니다.
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(arrayBuffer);
+        const sheet = workbook.getWorksheet(1); // 첫 번째 시트 사용
 
-    // 4. 상단 제목 ("차량운행일지")
-    sheet.mergeCells('A1:N2');
-    const titleCell = sheet.getCell('A1');
-    titleCell.value = '차 량 운 행 일 지';
-    titleCell.font = { size: 20, bold: true };
-    titleCell.alignment = centerStyle;
+        // 3. 상단 기본 정보 입력 (사용자 이름, 날짜 등)
+        // 양식의 셀 주소(C4, H4 등)에 맞춰 데이터를 넣습니다.
+        sheet.getCell('C4').value = document.getElementById('user-name').value;
+        sheet.getCell('H4').value = document.getElementById('user-id').value;
+        sheet.getCell('C5').value = document.getElementById('vehicle-number').value;
+        sheet.getCell('H5').value = document.getElementById('creation-date').value;
 
-    // 5. 사용자 정보 입력 (작성자, 차량번호 등)
-    const userName = document.getElementById('user-name').value;
-    const userId = document.getElementById('user-id').value;
-    const vehicleNo = document.getElementById('vehicle-number').value;
-    const createDate = document.getElementById('creation-date').value;
+        // 4. 운행 기록 데이터 채우기 (8행부터 시작)
+        const startRow = 8; 
+        logEntries.forEach((entry, index) => {
+            const currentRow = startRow + index;
+            const row = sheet.getRow(currentRow);
+            
+            // 데이터 입력 (기존 테두리나 배경색 서식은 건드리지 않고 값만 넣음)
+            row.getCell(1).value = index + 1;                  // A열: No
+            row.getCell(2).value = entry.date;                 // B열: 일자
+            row.getCell(3).value = entry.start;                // C열: 출발지
+            row.getCell(4).value = entry.end;                  // D열: 도착지
+            row.getCell(5).value = entry.purpose;              // E열: 운행목적
+            row.getCell(6).value = entry.fuelTypeName;         // F열: 유종
+            row.getCell(7).value = parseFloat(entry.fuelEfficiency); // G열: 연비
+            row.getCell(8).value = parseFloat(entry.distance);       // H열: 주행거리
+            row.getCell(9).value = parseFloat(entry.fuelPrice);      // I열: 유가
+            row.getCell(10).value = parseInt(entry.toll);      // J열: 통행료
+            row.getCell(11).value = parseInt(entry.parking);   // K열: 주차료
+            row.getCell(12).value = parseInt(entry.etc);       // L열: 기타
+            row.getCell(13).value = parseInt(entry.total);     // M열: 계
+            row.getCell(14).value = entry.remarks;             // N열: 비고
 
-    // 양식에 맞춘 정보 배치 (행 4~5)
-    sheet.mergeCells('A4:B4'); sheet.getCell('A4').value = '■ 성  명 :';
-    sheet.mergeCells('C4:D4'); sheet.getCell('C4').value = userName;
-    
-    sheet.mergeCells('F4:G4'); sheet.getCell('F4').value = '■ 사  번 :';
-    sheet.mergeCells('H4:I4'); sheet.getCell('H4').value = userId;
+            // 줄바꿈이나 텍스트 정렬 등이 깨지지 않도록 커밋
+            row.commit();
+        });
 
-    sheet.mergeCells('A5:B5'); sheet.getCell('A5').value = '■ 차량번호 :';
-    sheet.mergeCells('C5:D5'); sheet.getCell('C5').value = vehicleNo;
-
-    sheet.mergeCells('F5:G5'); sheet.getCell('F5').value = '■ 작성일자 :';
-    sheet.mergeCells('H5:I5'); sheet.getCell('H5').value = createDate;
-
-    // 6. 테이블 헤더 (행 7)
-    const headerRow = sheet.getRow(7);
-    headerRow.values = [
-        'No', '일자', '출발지', '도착지', '운행목적', 
-        '유종', '연비', '주행거리\n(Km)', '유류단가\n(L)', 
-        '통행료', '주차료', '기타', '계', '비고'
-    ];
-    headerRow.height = 30; // 헤더 높이
-
-    // 헤더 스타일 적용
-    headerRow.eachCell((cell) => {
-        cell.font = { bold: true };
-        cell.alignment = { ...centerStyle, wrapText: true };
-        cell.border = borderStyle;
-        cell.fill = {
-            type: 'pattern',
-            pattern: 'solid',
-            fgColor: { argb: 'FFE9ECEF' } // 회색 배경
-        };
-    });
-
-    // 7. 데이터 입력 (로그 엔트리)
-    let currentRowIdx = 8;
-    logEntries.forEach((entry, index) => {
-        const row = sheet.getRow(currentRowIdx);
-        row.values = [
-            index + 1,
-            entry.date,
-            entry.start,
-            entry.end,
-            entry.purpose,
-            entry.fuelTypeName,
-            entry.fuelEfficiency,
-            entry.distance,
-            entry.fuelPrice,
-            entry.toll,
-            entry.parking,
-            entry.etc,
-            entry.total,
-            entry.remarks
-        ];
-
-        // 각 셀 스타일 적용
-        row.eachCell((cell, colNumber) => {
-            cell.border = borderStyle;
-            if (colNumber >= 8 && colNumber <= 13) { // 숫자 컬럼들
-                cell.alignment = rightStyle;
-                cell.numFmt = '#,##0'; // 천단위 콤마
-            } else {
-                cell.alignment = centerStyle;
+        // 5. 하단 정산 내역 입력
+        // 엑셀 양식에서 "총 주행거리"라는 글자가 있는 행을 찾아서 그 옆에 값을 넣습니다.
+        // (행이 밀려도 정확한 위치를 찾기 위함입니다)
+        let summaryRowIndex = -1;
+        sheet.eachRow((row, rowNumber) => {
+            // A열 값에 "총 주행거리"가 포함되어 있으면 해당 행을 정산 내역 행으로 간주
+            const cellValue = row.getCell(1).value; 
+            if (cellValue && cellValue.toString().includes('총 주행거리')) {
+                summaryRowIndex = rowNumber;
             }
         });
-        currentRowIdx++;
-    });
 
-    // 8. 빈 줄 추가 (최소 10줄 유지 - 양식처럼 보이기 위해)
-    const minRows = 10;
-    const rowsToAdd = minRows - logEntries.length;
-    if (rowsToAdd > 0) {
-        for (let i = 0; i < rowsToAdd; i++) {
-            const row = sheet.getRow(currentRowIdx);
-            for(let j=1; j<=14; j++) {
-                row.getCell(j).border = borderStyle;
-            }
-            currentRowIdx++;
+        if (summaryRowIndex !== -1) {
+            // 정산 내역 값 입력 (HTML 화면에 계산된 값을 가져옴)
+            // 양식 기준: 값은 D열, J열에 위치
+            
+            // 첫 번째 줄: 총 주행거리 / 감가율
+            sheet.getCell(`D${summaryRowIndex}`).value = document.getElementById('total-distance').textContent; // 총 주행거리
+            sheet.getCell(`J${summaryRowIndex}`).value = document.getElementById('summary-depreciation-rate').textContent; // 감가율
+            
+            // 두 번째 줄: 유류대 합계 / 총 경비 합계
+            sheet.getCell(`D${summaryRowIndex + 1}`).value = document.getElementById('total-fuel-cost').textContent; // 유류대
+            sheet.getCell(`J${summaryRowIndex + 1}`).value = document.getElementById('grand-total').textContent; // 총 경비
         }
+
+        // 6. 파일 저장
+        const buffer = await workbook.xlsx.writeBuffer();
+        const fileNameDate = document.getElementById('creation-date').value || 'temp';
+        saveAs(new Blob([buffer]), `차량운행일지_${fileNameDate}.xlsx`);
+
+    } catch (error) {
+        console.error('Excel 생성 오류:', error);
+        alert('엑셀 다운로드 중 오류가 발생했습니다.\n' + error.message);
+    } finally {
+        const btn = document.querySelector('.btn-excel');
+        btn.disabled = false;
+        btn.innerHTML = `<span>Excel</span>
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>`;
     }
-
-    // 9. 하단 합계 영역 (양식 스타일)
-    currentRowIdx += 1; // 한 줄 띄우기
-
-    // 정산 내역 제목
-    sheet.mergeCells(`A${currentRowIdx}:N${currentRowIdx}`);
-    const summaryTitle = sheet.getCell(`A${currentRowIdx}`);
-    summaryTitle.value = '■ 정산 내역';
-    summaryTitle.font = { bold: true };
-    currentRowIdx++;
-
-    // 합계 테이블 데이터 가져오기
-    const totalDist = document.getElementById('total-distance').textContent;
-    const totalFuel = document.getElementById('total-fuel-cost').textContent;
-    const grandTotal = document.getElementById('grand-total').textContent;
-    const depRate = document.getElementById('summary-depreciation-rate').textContent;
-
-    // 합계 테이블 그리기
-    const summaryHeaderRow = sheet.getRow(currentRowIdx);
-    const summaryValueRow = sheet.getRow(currentRowIdx + 1);
-
-    // 셀 병합 및 값 설정 (디자인 맞춤)
-    sheet.mergeCells(`A${currentRowIdx}:C${currentRowIdx}`); // 총 주행거리 라벨
-    sheet.mergeCells(`D${currentRowIdx}:F${currentRowIdx}`); // 총 주행거리 값
-    sheet.mergeCells(`G${currentRowIdx}:I${currentRowIdx}`); // 감가율 라벨
-    sheet.mergeCells(`J${currentRowIdx}:N${currentRowIdx}`); // 감가율 값
-
-    sheet.getCell(`A${currentRowIdx}`).value = '총 주행거리 (Km)';
-    sheet.getCell(`D${currentRowIdx}`).value = totalDist;
-    sheet.getCell(`G${currentRowIdx}`).value = '감가율';
-    sheet.getCell(`J${currentRowIdx}`).value = depRate;
-
-    sheet.mergeCells(`A${currentRowIdx+1}:C${currentRowIdx+1}`); // 유류대 라벨
-    sheet.mergeCells(`D${currentRowIdx+1}:F${currentRowIdx+1}`); // 유류대 값
-    sheet.mergeCells(`G${currentRowIdx+1}:I${currentRowIdx+1}`); // 총 경비 라벨
-    sheet.mergeCells(`J${currentRowIdx+1}:N${currentRowIdx+1}`); // 총 경비 값
-
-    sheet.getCell(`A${currentRowIdx+1}`).value = '유류대 합계 (원)';
-    sheet.getCell(`D${currentRowIdx+1}`).value = totalFuel;
-    sheet.getCell(`G${currentRowIdx+1}`).value = '총 경비 합계 (원)';
-    sheet.getCell(`J${currentRowIdx+1}`).value = grandTotal;
-
-    // 합계 스타일 적용 (테두리 및 배경)
-    [currentRowIdx, currentRowIdx+1].forEach(rIdx => {
-        const row = sheet.getRow(rIdx);
-        row.height = 25;
-        for(let c=1; c<=14; c++) {
-            const cell = row.getCell(c);
-            cell.border = borderStyle;
-            cell.alignment = centerStyle;
-            // 라벨 컬럼(A, G) 배경색 및 볼드
-            if (c <= 3 || (c >=7 && c<=9)) {
-                cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE9ECEF' } };
-                cell.font = { bold: true };
-            }
-            // 총계(Grand Total) 빨간색 강조
-            if (rIdx === currentRowIdx+1 && c >= 10) {
-                 cell.font = { bold: true, color: { argb: 'FFFF0000' }, size: 12 };
-            }
-        }
-    });
-
-    // 10. 파일 생성 및 다운로드
-    const buffer = await workbook.xlsx.writeBuffer();
-    const fileName = `차량운행일지_${createDate || 'temp'}.xlsx`;
-    saveAs(new Blob([buffer]), fileName);
 }
     
     function shareViaKakao() {

@@ -182,13 +182,15 @@
     const entryDepreciationRateInput = document.getElementById('entry-depreciation-rate');
     const summaryDepreciationRateSpan = document.getElementById('summary-depreciation-rate');
 
-    document.addEventListener('DOMContentLoaded', () => {
+	document.addEventListener('DOMContentLoaded', () => {
+        // [기존 유지] URL 데이터 로드 및 날짜 설정
         const isDataLoadedFromUrl = loadDataFromUrl(); 
 
         const today = new Date().toISOString().split('T')[0];
         if (!creationDateInput.value) creationDateInput.value = today;
         if (!entryDateInput.value) entryDateInput.value = today;
         
+        // [기존 유지] 저장된 차량정보(로컬스토리지) 불러오기
         if (!isDataLoadedFromUrl) {
             const savedVehicleNumber = localStorage.getItem('vehicleNumber');
             const savedEfficiency = localStorage.getItem('fuelEfficiency');
@@ -201,15 +203,21 @@
             }
         }
 
+        // [이벤트 리스너 등록]
         document.getElementById('add-entry-btn').addEventListener('click', handleAddEntry);
         document.getElementById('update-entry-btn').addEventListener('click', handleUpdateEntry);
         document.getElementById('cancel-edit-btn').addEventListener('click', cancelEdit);
+        
+        // 날짜 변경 시 유가 조회
         entryDateInput.addEventListener('change', fetchAndSetFuelPrice);
+        
+        // 유종 변경 시 유가 조회 + 연비 업데이트 (기존 기능 유지)
         entryFuelTypeInput.addEventListener('change', () => {
             fetchAndSetFuelPrice();
             updateFuelEfficiency();
         });
 
+        // 입력 시 자동 저장 기능들
         vehicleNumberInput.addEventListener('input', () => localStorage.setItem('vehicleNumber', vehicleNumberInput.value));
         entryFuelEfficiencyInput.addEventListener('input', () => {
             localStorage.setItem('fuelEfficiency', entryFuelEfficiencyInput.value);
@@ -222,8 +230,14 @@
             updateSummary();
         });
 
+        // [초기 화면 렌더링]
         renderLogEntries();
         updateSummary();
+        
+        // ★ [추가됨] 페이지 로드 시, 기록이 있으면 유종 선택창 잠그기
+        updateFuelTypeState(); 
+
+        // 데이터가 URL에서 온 게 아니라면 유가 자동 조회 실행
         if (!isDataLoadedFromUrl) {
             fetchAndSetFuelPrice();
         }
@@ -272,13 +286,41 @@
         }
     }
 
-    async function fetchAndSetFuelPrice() {
-        const date = entryDateInput.value;
-        const fuelTypeCode = entryFuelTypeInput.value;
-        if (!date) return;
-        entryFuelPriceInput.value = "조회 중...";
-        const oilPrices = await fetchOilPrice(date);
-        entryFuelPriceInput.value = oilPrices?.find(o => o.PRODCD === fuelTypeCode)?.PRICE || 0;
+	async function fetchAndSetFuelPrice() {
+        const dateInput = document.getElementById('entry-date');
+        const fuelSelect = document.getElementById('entry-fuel-type');
+        const priceInput = document.getElementById('entry-fuel-price');
+        
+        const dateVal = dateInput.value;
+        if (!dateVal) return;
+
+        // 사용자에게 조회 중임을 알림
+        priceInput.placeholder = "조회 중...";
+
+        try {
+            // Opinet 프록시 서버 호출 (날짜 포맷 YYYYMMDD 변환)
+            const dateStr = dateVal.replace(/-/g, '');
+            const url = `https://opinet-proxy.vercel.app/api/proxy?date=${dateStr}`;
+            
+            const res = await fetch(url);
+            if(!res.ok) throw new Error('유가 정보를 불러오는데 실패했습니다.');
+            
+            const data = await res.json();
+            
+            // 데이터가 있으면 해당 유종의 가격을 입력
+            if(data.RESULT && data.RESULT.OIL) {
+                const fuelCode = fuelSelect.value; // B027(휘발유), D047(경유), K015(LPG)
+                const oil = data.RESULT.OIL.find(o => o.PRODCD === fuelCode);
+                if(oil) {
+                    priceInput.value = oil.PRICE;
+                } else {
+                    console.log("해당 유종의 가격 정보가 없습니다.");
+                }
+            }
+        } catch(e) {
+            console.error("유가 조회 에러:", e);
+            // 에러 발생 시 기존 값 유지하거나 0 처리 (여기선 유지)
+        }
     }
 
     function updateFuelEfficiency() {
@@ -310,10 +352,12 @@
         };
     }
 
-async function handleAddEntry() {
+	async function handleAddEntry() {
+        // 잠겨있는 상태의 유종 값도 가져오기 위해 processEntry 전 잠시 해제 필요할 수 있으나,
+        // select value는 disabled 상태에서도 읽히므로 그대로 진행
         const newEntry = await processEntry();
         if (newEntry) {
-            // [중요] 만약 기존 기록이 있다면, 유종을 강제로 기존 것과 맞춤
+            // 기존 기록이 있다면 유종 강제 통일
             if (logEntries.length > 0) {
                 newEntry.fuelTypeCode = logEntries[0].fuelTypeCode;
                 newEntry.fuelTypeName = logEntries[0].fuelTypeName;
@@ -322,21 +366,21 @@ async function handleAddEntry() {
             logEntries.push(newEntry);
             renderLogEntries();
             updateSummary();
-            resetInputForm(); // 여기서 updateFuelTypeState가 호출되어 잠김
+            resetInputForm();
         }
     }
 
-async function handleUpdateEntry() {
+	async function handleUpdateEntry() {
         const entryIndex = logEntries.findIndex(e => e.id === editingEntryId);
         if (entryIndex === -1) { cancelEdit(); return; }
 
         const updatedEntryData = await processEntry();
         if (updatedEntryData) {
-            // [핵심 기능] 수정 시 유종이 변경되었다면 모든 기록의 유종을 일괄 변경
+            // [핵심] 유종 일괄 변경 로직
             const newFuelCode = updatedEntryData.fuelTypeCode;
             const newFuelName = updatedEntryData.fuelTypeName;
 
-            // 모든 기록 업데이트
+            // 모든 기록의 유종을 현재 수정된 유종으로 통일
             logEntries.forEach(entry => {
                 entry.fuelTypeCode = newFuelCode;
                 entry.fuelTypeName = newFuelName;
@@ -351,7 +395,7 @@ async function handleUpdateEntry() {
 
             renderLogEntries();
             updateSummary();
-            resetInputForm(); // 수정 모드 종료 및 잠금 재설정
+            resetInputForm();
         }
     }
 
@@ -414,7 +458,9 @@ async function handleUpdateEntry() {
             logEntries = logEntries.filter(e => e.id !== id);
             renderLogEntries();
             updateSummary();
-            updateFuelTypeState(); // 다 지웠으면 유종 선택창 풀림
+            
+            // 모두 삭제되면 유종 선택 잠금 풀기
+            updateFuelTypeState();
         }
     }
 
@@ -424,7 +470,7 @@ async function handleUpdateEntry() {
 
         editingEntryId = id;
 
-        // 폼에 값 채우기
+        // 값 채우기
         document.getElementById('entry-date').value = entry.date;
         document.getElementById('entry-fuel-type').value = entry.fuelTypeCode;
         document.getElementById('entry-fuel-price').value = entry.fuelPrice;
@@ -439,7 +485,7 @@ async function handleUpdateEntry() {
         if(document.getElementById('entry-etc')) document.getElementById('entry-etc').value = entry.etc;
         if(document.getElementById('entry-fuel-efficiency')) document.getElementById('entry-fuel-efficiency').value = entry.fuelEfficiency;
 
-        // UI 변경 (추가 버튼 -> 수정 버튼)
+        // UI 변경
         document.getElementById('form-title').innerText = '운행 기록 수정';
         const formContainer = document.getElementById('entry-form-container');
         const actionBtn = formContainer.querySelector('button.w-full');
@@ -449,7 +495,6 @@ async function handleUpdateEntry() {
         actionBtn.classList.add('bg-green-600', 'hover:bg-green-700');
         actionBtn.onclick = handleUpdateEntry;
 
-        // 취소 버튼 추가
         if (!document.getElementById('btn-cancel-edit')) {
             const cancelBtn = document.createElement('button');
             cancelBtn.id = 'btn-cancel-edit';
@@ -459,24 +504,22 @@ async function handleUpdateEntry() {
             formContainer.appendChild(cancelBtn);
         }
 
-        // [중요] 수정 모드에서는 유종 변경 허용
+        // [중요] 수정 모드에서는 유종 선택 허용
         updateFuelTypeState();
     }
 	
 	function updateFuelTypeState() {
         const fuelSelect = document.getElementById('entry-fuel-type');
         
-        // 수정 모드일 때는 항상 변경 가능하게 풂
         if (editingEntryId !== null) {
+            // 수정 모드: 언제나 변경 가능
             fuelSelect.disabled = false;
-        } 
-        // 수정 모드가 아니고 기록이 하나라도 있다면 -> 첫 번째 기록의 유종으로 고정하고 잠금
-        else if (logEntries.length > 0) {
+        } else if (logEntries.length > 0) {
+            // 추가 모드 & 기록 있음: 첫 번째 기록의 유종으로 고정 및 잠금
             fuelSelect.value = logEntries[0].fuelTypeCode;
             fuelSelect.disabled = true;
-        } 
-        // 기록이 없으면 -> 자유롭게 선택 가능
-        else {
+        } else {
+            // 추가 모드 & 기록 없음: 자유롭게 선택 가능
             fuelSelect.disabled = false;
         }
     }
@@ -510,37 +553,31 @@ async function handleUpdateEntry() {
 	function resetInputForm() {
         editingEntryId = null;
         
-        // 날짜는 오늘 날짜로 유지, 나머지는 초기화
+        // 날짜는 오늘 날짜(또는 마지막 입력 날짜) 유지
         document.getElementById('entry-date').value = new Date().toISOString().slice(0, 10);
         
-        // 유종은 초기화하지 않고 상태 업데이트 함수에 맡김
-        // document.getElementById('entry-fuel-type').value = 'B027'; (삭제됨)
-        
-        document.getElementById('entry-fuel-price').value = ''; // 가격은 초기화
+        // 나머지 필드 초기화
+        document.getElementById('entry-fuel-price').value = '';
         document.getElementById('entry-purpose').value = '';
         document.getElementById('entry-start').value = '';
         document.getElementById('entry-end').value = '';
         document.getElementById('entry-distance').value = '';
         document.getElementById('entry-remarks').value = '';
         
-        // 숫자 필드 초기화
         ['entry-toll', 'entry-parking', 'entry-etc'].forEach(id => {
             const el = document.getElementById(id);
             if(el) el.value = '';
         });
         
-        // 연비는 기본값 10으로 복구
+        // 연비 기본값 복구
         const effInput = document.getElementById('entry-fuel-efficiency');
         if(effInput) effInput.value = '10';
 
-        // 버튼 상태 복구 (추가 모드로)
+        // UI 상태 복구 (버튼 등)
         document.getElementById('form-title').innerText = '운행 기록 추가';
-        
-        // 기존 버튼을 복제하여 이벤트 리스너 초기화 (수정 -> 추가)
         const formContainer = document.getElementById('entry-form-container');
-        const oldBtn = formContainer.querySelector('button.w-full'); // 등록/수정 버튼 찾기
+        const oldBtn = formContainer.querySelector('button.w-full'); 
         
-        // 버튼을 새로 만들어서 교체 (이벤트 꼬임 방지)
         const newBtn = document.createElement('button');
         newBtn.className = "w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 transition duration-200";
         newBtn.innerText = "기록 추가";
@@ -548,12 +585,12 @@ async function handleUpdateEntry() {
         
         if (oldBtn) oldBtn.replaceWith(newBtn);
 
-        // 취소 버튼 제거
         const cancelBtn = document.getElementById('btn-cancel-edit');
         if (cancelBtn) cancelBtn.remove();
 
-        // [중요] 유종 선택창 상태 업데이트 (잠금 여부 결정)
+        // 상태 업데이트 및 유가 조회
         updateFuelTypeState();
+        fetchAndSetFuelPrice(); 
     }
     
     

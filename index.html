@@ -310,25 +310,48 @@
         };
     }
 
-    async function handleAddEntry() {
+async function handleAddEntry() {
         const newEntry = await processEntry();
         if (newEntry) {
+            // [중요] 만약 기존 기록이 있다면, 유종을 강제로 기존 것과 맞춤
+            if (logEntries.length > 0) {
+                newEntry.fuelTypeCode = logEntries[0].fuelTypeCode;
+                newEntry.fuelTypeName = logEntries[0].fuelTypeName;
+            }
+            
             logEntries.push(newEntry);
             renderLogEntries();
             updateSummary();
-            resetInputForm();
+            resetInputForm(); // 여기서 updateFuelTypeState가 호출되어 잠김
         }
     }
 
-    async function handleUpdateEntry() {
+async function handleUpdateEntry() {
         const entryIndex = logEntries.findIndex(e => e.id === editingEntryId);
         if (entryIndex === -1) { cancelEdit(); return; }
-        const updatedEntry = await processEntry(logEntries[entryIndex]);
-        if (updatedEntry) {
-            logEntries[entryIndex] = updatedEntry;
+
+        const updatedEntryData = await processEntry();
+        if (updatedEntryData) {
+            // [핵심 기능] 수정 시 유종이 변경되었다면 모든 기록의 유종을 일괄 변경
+            const newFuelCode = updatedEntryData.fuelTypeCode;
+            const newFuelName = updatedEntryData.fuelTypeName;
+
+            // 모든 기록 업데이트
+            logEntries.forEach(entry => {
+                entry.fuelTypeCode = newFuelCode;
+                entry.fuelTypeName = newFuelName;
+            });
+
+            // 현재 수정 중인 데이터 업데이트
+            logEntries[entryIndex] = {
+                ...updatedEntryData,
+                fuelTypeCode: newFuelCode,
+                fuelTypeName: newFuelName
+            };
+
             renderLogEntries();
             updateSummary();
-            cancelEdit();
+            resetInputForm(); // 수정 모드 종료 및 잠금 재설정
         }
     }
 
@@ -386,11 +409,78 @@
         resetInputForm();
     }
 
-    function deleteEntry(id) {
-        logEntries = logEntries.filter(entry => entry.id !== id);
-        renderLogEntries();
-        updateSummary();
+	function deleteEntry(id) {
+        if(confirm('삭제하시겠습니까?')) {
+            logEntries = logEntries.filter(e => e.id !== id);
+            renderLogEntries();
+            updateSummary();
+            updateFuelTypeState(); // 다 지웠으면 유종 선택창 풀림
+        }
     }
+
+	function editEntry(id) {
+        const entry = logEntries.find(e => e.id === id);
+        if (!entry) return;
+
+        editingEntryId = id;
+
+        // 폼에 값 채우기
+        document.getElementById('entry-date').value = entry.date;
+        document.getElementById('entry-fuel-type').value = entry.fuelTypeCode;
+        document.getElementById('entry-fuel-price').value = entry.fuelPrice;
+        document.getElementById('entry-purpose').value = entry.purpose;
+        document.getElementById('entry-start').value = entry.start;
+        document.getElementById('entry-end').value = entry.end;
+        document.getElementById('entry-distance').value = entry.distance;
+        document.getElementById('entry-remarks').value = entry.remarks;
+        
+        if(document.getElementById('entry-toll')) document.getElementById('entry-toll').value = entry.toll;
+        if(document.getElementById('entry-parking')) document.getElementById('entry-parking').value = entry.parking;
+        if(document.getElementById('entry-etc')) document.getElementById('entry-etc').value = entry.etc;
+        if(document.getElementById('entry-fuel-efficiency')) document.getElementById('entry-fuel-efficiency').value = entry.fuelEfficiency;
+
+        // UI 변경 (추가 버튼 -> 수정 버튼)
+        document.getElementById('form-title').innerText = '운행 기록 수정';
+        const formContainer = document.getElementById('entry-form-container');
+        const actionBtn = formContainer.querySelector('button.w-full');
+        
+        actionBtn.innerText = '수정 완료';
+        actionBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        actionBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+        actionBtn.onclick = handleUpdateEntry;
+
+        // 취소 버튼 추가
+        if (!document.getElementById('btn-cancel-edit')) {
+            const cancelBtn = document.createElement('button');
+            cancelBtn.id = 'btn-cancel-edit';
+            cancelBtn.innerText = '취소';
+            cancelBtn.className = "w-full mt-2 bg-gray-500 text-white p-2 rounded-md hover:bg-gray-600 transition duration-200";
+            cancelBtn.onclick = cancelEdit;
+            formContainer.appendChild(cancelBtn);
+        }
+
+        // [중요] 수정 모드에서는 유종 변경 허용
+        updateFuelTypeState();
+    }
+	
+	function updateFuelTypeState() {
+        const fuelSelect = document.getElementById('entry-fuel-type');
+        
+        // 수정 모드일 때는 항상 변경 가능하게 풂
+        if (editingEntryId !== null) {
+            fuelSelect.disabled = false;
+        } 
+        // 수정 모드가 아니고 기록이 하나라도 있다면 -> 첫 번째 기록의 유종으로 고정하고 잠금
+        else if (logEntries.length > 0) {
+            fuelSelect.value = logEntries[0].fuelTypeCode;
+            fuelSelect.disabled = true;
+        } 
+        // 기록이 없으면 -> 자유롭게 선택 가능
+        else {
+            fuelSelect.disabled = false;
+        }
+    }
+	
 
     function moveEntry(index, direction) {
         if (direction === 'up' && index > 0) {
@@ -417,14 +507,55 @@
         document.getElementById('grand-total').textContent = Math.round(grandTotal).toLocaleString();
     }
 
-    function resetInputForm() {
-        entryDateInput.value = new Date().toISOString().split('T')[0];
-        ['entry-start', 'entry-end', 'entry-purpose', 'entry-remarks', 'entry-distance'].forEach(id => document.getElementById(id).value = '');
-        entryFuelTypeInput.value = 'B027';
-        updateFuelEfficiency();
-        document.getElementById('entry-start').focus();
-        fetchAndSetFuelPrice();
+	function resetInputForm() {
+        editingEntryId = null;
+        
+        // 날짜는 오늘 날짜로 유지, 나머지는 초기화
+        document.getElementById('entry-date').value = new Date().toISOString().slice(0, 10);
+        
+        // 유종은 초기화하지 않고 상태 업데이트 함수에 맡김
+        // document.getElementById('entry-fuel-type').value = 'B027'; (삭제됨)
+        
+        document.getElementById('entry-fuel-price').value = ''; // 가격은 초기화
+        document.getElementById('entry-purpose').value = '';
+        document.getElementById('entry-start').value = '';
+        document.getElementById('entry-end').value = '';
+        document.getElementById('entry-distance').value = '';
+        document.getElementById('entry-remarks').value = '';
+        
+        // 숫자 필드 초기화
+        ['entry-toll', 'entry-parking', 'entry-etc'].forEach(id => {
+            const el = document.getElementById(id);
+            if(el) el.value = '';
+        });
+        
+        // 연비는 기본값 10으로 복구
+        const effInput = document.getElementById('entry-fuel-efficiency');
+        if(effInput) effInput.value = '10';
+
+        // 버튼 상태 복구 (추가 모드로)
+        document.getElementById('form-title').innerText = '운행 기록 추가';
+        
+        // 기존 버튼을 복제하여 이벤트 리스너 초기화 (수정 -> 추가)
+        const formContainer = document.getElementById('entry-form-container');
+        const oldBtn = formContainer.querySelector('button.w-full'); // 등록/수정 버튼 찾기
+        
+        // 버튼을 새로 만들어서 교체 (이벤트 꼬임 방지)
+        const newBtn = document.createElement('button');
+        newBtn.className = "w-full bg-blue-600 text-white p-2 rounded-md hover:bg-blue-700 transition duration-200";
+        newBtn.innerText = "기록 추가";
+        newBtn.onclick = handleAddEntry;
+        
+        if (oldBtn) oldBtn.replaceWith(newBtn);
+
+        // 취소 버튼 제거
+        const cancelBtn = document.getElementById('btn-cancel-edit');
+        if (cancelBtn) cancelBtn.remove();
+
+        // [중요] 유종 선택창 상태 업데이트 (잠금 여부 결정)
+        updateFuelTypeState();
     }
+    
     
     function downloadPDF() {
         if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {

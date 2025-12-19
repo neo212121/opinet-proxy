@@ -467,34 +467,40 @@ async function downloadExcel() {
         btn.disabled = true;
         btn.innerHTML = '<span>생성 중...</span>';
 
-        // 1. 서버(프로젝트 폴더)에 있는 원본 엑셀 양식 파일을 가져옵니다.
+        // 1. 엑셀 양식 파일 불러오기
         const response = await fetch('./유류대정산서_양식.xlsx');
         if (!response.ok) {
             throw new Error('엑셀 양식 파일을 찾을 수 없습니다. (유류대정산서_양식.xlsx)');
         }
         const arrayBuffer = await response.arrayBuffer();
 
-        // 2. ExcelJS로 파일을 읽습니다.
+        // 2. ExcelJS 워크북 로드
         const workbook = new ExcelJS.Workbook();
         await workbook.xlsx.load(arrayBuffer);
-        const sheet = workbook.getWorksheet(1); // 첫 번째 시트 사용
+        const sheet = workbook.getWorksheet(1);
 
-        // 3. 상단 기본 정보 입력 (좌표 전면 수정)
-        // 작성일자 (C4)
-        sheet.getCell('C4').value = document.getElementById('creation-date').value;
-        
-        // 성명 (C5)
-        sheet.getCell('C5').value = document.getElementById('user-name').value;
-        
-        // 사번 (H5 - 성명 옆으로 이동)
-        sheet.getCell('H5').value = document.getElementById('user-id').value;
-        
-        // 차량번호 (C6)
-        sheet.getCell('C6').value = document.getElementById('vehicle-number').value;
+        // --- [상단 기본 정보] ---
+        sheet.getCell('C4').value = document.getElementById('creation-date').value; // 작성일자
+        sheet.getCell('C5').value = document.getElementById('user-name').value;    // 성명
+        sheet.getCell('H5').value = document.getElementById('user-id').value;      // 사번
+        sheet.getCell('C6').value = document.getElementById('vehicle-number').value; // 차량번호
 
+        // --- [유가 정보 (I5~I7)] ---
+        // 현재 선택된 유종과 유가를 확인하여 해당 칸에 입력
+        const currentFuelType = document.getElementById('entry-fuel-type').value; // B027(휘발유), D047(경유), K015(LPG)
+        const currentPrice = parseFloat(document.getElementById('entry-fuel-price').value) || 0;
 
-        // 4. 운행 기록 데이터 채우기 (8행부터 시작)
-        const startRow = 8; 
+        // 선택된 유종에 맞는 칸에만 가격 입력 (나머지는 공란 유지)
+        if (currentFuelType === 'B027') {
+            sheet.getCell('I5').value = currentPrice; // 휘발유
+        } else if (currentFuelType === 'D047') {
+            sheet.getCell('I6').value = currentPrice; // 경유
+        } else if (currentFuelType === 'K015') {
+            sheet.getCell('I7').value = currentPrice; // LPG
+        }
+
+        // --- [운행 기록 데이터 (12번 줄부터 시작)] ---
+        const startRow = 12; 
         logEntries.forEach((entry, index) => {
             const currentRow = startRow + index;
             const row = sheet.getRow(currentRow);
@@ -518,30 +524,43 @@ async function downloadExcel() {
             row.commit();
         });
 
-        // 5. 하단 정산 내역 입력
-        // "총 주행거리"가 적힌 행을 찾아서 값 입력
-        let summaryRowIndex = -1;
-        sheet.eachRow((row, rowNumber) => {
-            const cellValue = row.getCell(1).value; 
-            if (cellValue && cellValue.toString().includes('총 주행거리')) {
-                summaryRowIndex = rowNumber;
-            }
-        });
+        // --- [하단 정산 내역 (27행, 31행)] ---
+        
+        // 화면에 계산된 값 가져오기 (쉼표 제거 후 숫자로 변환)
+        const totalDistText = document.getElementById('total-distance').textContent;
+        const totalDistVal = parseFloat(totalDistText.replace(/,/g, '')) || 0;
+        
+        const grandTotalText = document.getElementById('grand-total').textContent;
+        const grandTotalVal = parseFloat(grandTotalText.replace(/,/g, '')) || 0;
 
-        // 만약 "총 주행거리" 글자를 못 찾으면 데이터 끝나는 다음 줄들을 사용
-        if (summaryRowIndex === -1) {
-            summaryRowIndex = startRow + logEntries.length + 1;
-        }
+        const depRateText = document.getElementById('summary-depreciation-rate').textContent;
+        const depRateVal = parseFloat(depRateText) || 1.2;
 
-        if (summaryRowIndex !== -1) {
-            // 첫 번째 줄: 총 주행거리 / 감가율
-            sheet.getCell(`D${summaryRowIndex}`).value = document.getElementById('total-distance').textContent;
-            sheet.getCell(`J${summaryRowIndex}`).value = document.getElementById('summary-depreciation-rate').textContent;
-            
-            // 두 번째 줄: 유류대 합계 / 총 경비 합계
-            sheet.getCell(`D${summaryRowIndex + 1}`).value = document.getElementById('total-fuel-cost').textContent;
-            sheet.getCell(`J${summaryRowIndex + 1}`).value = document.getElementById('grand-total').textContent;
-        }
+        // [27번 줄 설정]
+        sheet.getCell('A27').value = '총 주행거리';   // 텍스트 강제 입력
+        sheet.getCell('H27').value = totalDistVal;   // 총 주행거리 값 (기존 A열에서 H열로 이동)
+
+        // [31번 줄 설정]
+        // D31: 유종 (현재 선택된 값)
+        const fuelTypeName = document.getElementById('entry-fuel-type').options[document.getElementById('entry-fuel-type').selectedIndex].text;
+        sheet.getCell('D31').value = fuelTypeName;
+
+        // E31: 총 운행거리 (H27과 동일값)
+        sheet.getCell('E31').value = totalDistVal;
+
+        // F31: 유가 (원/L)
+        sheet.getCell('F31').value = currentPrice;
+
+        // G31: 연비 (유종에 맞춰 10 또는 7)
+        const efficiency = (currentFuelType === 'K015') ? 7 : 10;
+        sheet.getCell('G31').value = efficiency;
+
+        // H31: 감가율 (1.2)
+        sheet.getCell('H31').value = depRateVal;
+
+        // I31: 총 금액 (J28에 있던 금액을 여기로)
+        sheet.getCell('I31').value = grandTotalVal;
+
 
         // 6. 파일 저장
         const buffer = await workbook.xlsx.writeBuffer();

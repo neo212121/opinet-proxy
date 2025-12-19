@@ -1,18 +1,12 @@
 {
   "name": "opinet-proxy",
   "version": "1.0.0",
-  "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
-    "chrome-aws-lambda": "^10.1.0",
     "jspdf": "^3.0.1",
     "jspdf-autotable": "^5.0.2",
-    "puppeteer-core": "^10.4.0"
+    "node-fetch": "^2.6.1" 
   }
 }

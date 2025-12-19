@@ -424,38 +424,65 @@
         fetchAndSetFuelPrice();
     }
     
-    function downloadPDF() {
-        if (typeof window.jspdf === 'undefined' || typeof html2canvas === 'undefined') {
-            alert('PDF 생성 라이브러리를 로드하는 중입니다. 잠시 후 다시 시도해주세요.');
-            return;
-        }
-
-        const { jsPDF } = window.jspdf;
-        const element = document.getElementById('log-content');
-        const buttons = element.querySelector('.no-print');
+ async function downloadPDF() {
         const pdfButton = document.querySelector('.btn-pdf');
-        
-        if (buttons) buttons.style.display = 'none';
-        if (pdfButton) { pdfButton.disabled = true; pdfButton.querySelector('span').textContent = '생성 중...'; }
+        // 버튼 로딩 상태로 변경
+        const originalText = pdfButton.innerHTML;
+        pdfButton.disabled = true;
+        pdfButton.innerHTML = '<span>생성 중...</span>';
 
-        html2canvas(element, { scale: 2, useCORS: true }).then(canvas => {
-            const imgData = canvas.toDataURL('image/png');
-            const pdf = new jsPDF('p', 'mm', 'a4');
-            const imgProps = pdf.getImageProperties(imgData);
-            const pdfWidth = pdf.internal.pageSize.getWidth();
-            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
-            
-            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-            
-            const creationDate = document.getElementById('creation-date').value;
-            pdf.save(`차량운행일지_${creationDate || new Date().toISOString().slice(0,10)}.pdf`);
+        try {
+            // 1. 서버로 보낼 데이터 준비
+            const requestData = {
+                logEntries: logEntries,
+                userInfo: {
+                    name: document.getElementById('user-name').value,
+                    id: document.getElementById('user-id').value,
+                    creationDate: document.getElementById('creation-date').value
+                },
+                summary: {
+                    totalDistance: document.getElementById('total-distance').textContent,
+                    totalFuelCost: document.getElementById('total-fuel-cost').textContent,
+                    grandTotal: document.getElementById('grand-total').textContent
+                }
+            };
 
-        }).catch(err => {
-            console.error("PDF 생성 오류:", err);
-        }).finally(() => {
-            if (buttons) buttons.style.display = 'flex';
-            if (pdfButton) { pdfButton.disabled = false; pdfButton.querySelector('span').textContent = 'PDF';}
-        });
+            // 2. 서버 API 호출 (api/generate-pdf.js)
+            const response = await fetch('/api/generate-pdf', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(requestData)
+            });
+
+            if (!response.ok) {
+                const errData = await response.json();
+                throw new Error(errData.error || 'PDF 생성 실패');
+            }
+
+            // 3. 받아온 PDF 파일 다운로드 처리
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            // 파일명 설정 (예: 차량운행일지_2024-05-20.pdf)
+            const dateStr = document.getElementById('creation-date').value || new Date().toISOString().slice(0,10);
+            a.download = `차량운행일지_${dateStr}.pdf`;
+            
+            document.body.appendChild(a);
+            a.click();
+            
+            // 뒷정리
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+
+        } catch (error) {
+            console.error('PDF 다운로드 에러:', error);
+            alert(`PDF 생성 중 오류가 발생했습니다: ${error.message}`);
+        } finally {
+            // 버튼 상태 원상복구
+            pdfButton.disabled = false;
+            pdfButton.innerHTML = originalText;
+        }
     }
 
     function downloadExcel() {

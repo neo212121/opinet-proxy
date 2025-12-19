@@ -468,7 +468,6 @@ async function downloadExcel() {
         btn.innerHTML = '<span>생성 중...</span>';
 
         // 1. 서버(프로젝트 폴더)에 있는 원본 엑셀 양식 파일을 가져옵니다.
-        // 주의: 파일명이 정확해야 하며, index.html과 같은 경로(또는 public 폴더)에 있어야 합니다.
         const response = await fetch('./유류대정산서_양식.xlsx');
         if (!response.ok) {
             throw new Error('엑셀 양식 파일을 찾을 수 없습니다. (유류대정산서_양식.xlsx)');
@@ -480,12 +479,19 @@ async function downloadExcel() {
         await workbook.xlsx.load(arrayBuffer);
         const sheet = workbook.getWorksheet(1); // 첫 번째 시트 사용
 
-        // 3. 상단 기본 정보 입력 (사용자 이름, 날짜 등)
-        // 양식의 셀 주소(C4, H4 등)에 맞춰 데이터를 넣습니다.
-        sheet.getCell('C4').value = document.getElementById('user-name').value;
-        sheet.getCell('H4').value = document.getElementById('user-id').value;
-        sheet.getCell('C5').value = document.getElementById('vehicle-number').value;
-        sheet.getCell('H5').value = document.getElementById('creation-date').value;
+        // 3. 상단 기본 정보 입력 (좌표 전면 수정)
+        // 작성일자 (C4)
+        sheet.getCell('C4').value = document.getElementById('creation-date').value;
+        
+        // 성명 (C5)
+        sheet.getCell('C5').value = document.getElementById('user-name').value;
+        
+        // 사번 (H5 - 성명 옆으로 이동)
+        sheet.getCell('H5').value = document.getElementById('user-id').value;
+        
+        // 차량번호 (C6)
+        sheet.getCell('C6').value = document.getElementById('vehicle-number').value;
+
 
         // 4. 운행 기록 데이터 채우기 (8행부터 시작)
         const startRow = 8; 
@@ -493,7 +499,7 @@ async function downloadExcel() {
             const currentRow = startRow + index;
             const row = sheet.getRow(currentRow);
             
-            // 데이터 입력 (기존 테두리나 배경색 서식은 건드리지 않고 값만 넣음)
+            // 데이터 입력
             row.getCell(1).value = index + 1;                  // A열: No
             row.getCell(2).value = entry.date;                 // B열: 일자
             row.getCell(3).value = entry.start;                // C열: 출발지
@@ -509,33 +515,32 @@ async function downloadExcel() {
             row.getCell(13).value = parseInt(entry.total);     // M열: 계
             row.getCell(14).value = entry.remarks;             // N열: 비고
 
-            // 줄바꿈이나 텍스트 정렬 등이 깨지지 않도록 커밋
             row.commit();
         });
 
         // 5. 하단 정산 내역 입력
-        // 엑셀 양식에서 "총 주행거리"라는 글자가 있는 행을 찾아서 그 옆에 값을 넣습니다.
-        // (행이 밀려도 정확한 위치를 찾기 위함입니다)
+        // "총 주행거리"가 적힌 행을 찾아서 값 입력
         let summaryRowIndex = -1;
         sheet.eachRow((row, rowNumber) => {
-            // A열 값에 "총 주행거리"가 포함되어 있으면 해당 행을 정산 내역 행으로 간주
             const cellValue = row.getCell(1).value; 
             if (cellValue && cellValue.toString().includes('총 주행거리')) {
                 summaryRowIndex = rowNumber;
             }
         });
 
+        // 만약 "총 주행거리" 글자를 못 찾으면 데이터 끝나는 다음 줄들을 사용
+        if (summaryRowIndex === -1) {
+            summaryRowIndex = startRow + logEntries.length + 1;
+        }
+
         if (summaryRowIndex !== -1) {
-            // 정산 내역 값 입력 (HTML 화면에 계산된 값을 가져옴)
-            // 양식 기준: 값은 D열, J열에 위치
-            
             // 첫 번째 줄: 총 주행거리 / 감가율
-            sheet.getCell(`D${summaryRowIndex}`).value = document.getElementById('total-distance').textContent; // 총 주행거리
-            sheet.getCell(`J${summaryRowIndex}`).value = document.getElementById('summary-depreciation-rate').textContent; // 감가율
+            sheet.getCell(`D${summaryRowIndex}`).value = document.getElementById('total-distance').textContent;
+            sheet.getCell(`J${summaryRowIndex}`).value = document.getElementById('summary-depreciation-rate').textContent;
             
             // 두 번째 줄: 유류대 합계 / 총 경비 합계
-            sheet.getCell(`D${summaryRowIndex + 1}`).value = document.getElementById('total-fuel-cost').textContent; // 유류대
-            sheet.getCell(`J${summaryRowIndex + 1}`).value = document.getElementById('grand-total').textContent; // 총 경비
+            sheet.getCell(`D${summaryRowIndex + 1}`).value = document.getElementById('total-fuel-cost').textContent;
+            sheet.getCell(`J${summaryRowIndex + 1}`).value = document.getElementById('grand-total').textContent;
         }
 
         // 6. 파일 저장
